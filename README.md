@@ -2,7 +2,7 @@
 
 **The payments service of an online store.** Take a payment by card, Apple Pay or pay later; confirm it; give money back; keep the books; and check that the money the gateway paid out is the money the store sold.
 
-*Mizan* (ميزان) is Arabic for a scale. It is a working name.
+*Mizan* (ميزان) is Arabic for a scale.
 
 > **Status:** built, tested and reviewed. Not yet run against a real gateway's test mode, which needs test keys: until then, the [assumptions](docs/DESIGN.md#15-assumptions-to-confirm) about the gateways stay open. See [STATUS.md](docs/plan/STATUS.md).
 

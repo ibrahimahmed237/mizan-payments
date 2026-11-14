@@ -2,7 +2,7 @@
 
 Mizan is the payments service of an online store. It takes payments, confirms them, gives money back, keeps the books, and checks that the money the gateway paid out is the money the store sold.
 
-*Mizan* (ميزان) is Arabic for a scale: both sides must balance. It is a working name.
+*Mizan* (ميزان) is Arabic for a scale: both sides must balance.
 
 This page is the high-level design. Each part has a low-level design in [lld](lld/README.md). Decisions are in [adr](adr/README.md). Words are in the [glossary](GLOSSARY.md).
 
