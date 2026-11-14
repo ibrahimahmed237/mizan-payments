@@ -488,6 +488,9 @@ public final class Simulator {
 
   /** Sends one webhook. Runs outside the simulator's lock. A failed delivery is tried again later, as documented. */
   private void deliver(Gateway gateway, URI target, String body, int attempt) {
+    // The wait before the next try counts from this try, not from when its answer came back: a test may move the
+    // clock in between.
+    Instant tried = clock.instant();
     var request = HttpRequest.newBuilder(target)
         .timeout(Duration.ofSeconds(5))
         .header("Content-Type", "application/json")
@@ -505,7 +508,7 @@ public final class Simulator {
       return;
     }
     if (!delivered && attempt < WEBHOOK_RETRIES.size()) {
-      schedule(WEBHOOK_RETRIES.get(attempt), () -> deliver(gateway, target, body, attempt + 1));
+      scheduleAt(tried.plus(WEBHOOK_RETRIES.get(attempt)), () -> deliver(gateway, target, body, attempt + 1));
     }
   }
 
@@ -523,7 +526,11 @@ public final class Simulator {
   // ---------------------------------------------------------------- time
 
   synchronized void schedule(Duration delay, Runnable work) {
-    tasks.add(new Task(clock.instant().plus(delay), ++sequence, work));
+    scheduleAt(clock.instant().plus(delay), work);
+  }
+
+  private synchronized void scheduleAt(Instant due, Runnable work) {
+    tasks.add(new Task(due, ++sequence, work));
   }
 
   /**
