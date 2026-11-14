@@ -2,6 +2,8 @@
 
 The proof run (`ProofRunIT`) makes many payments, each with faults drawn from a seed, takes each through its whole life and its settlement, and then compares Mizan's record with the simulator's own book. See the [design](../DESIGN.md#14-testing-and-proof).
 
+**New to it?** [How the proof run works](HOW-IT-WORKS.md) explains the plan, the faults, the checks, how to read a report, and what the run does not prove.
+
 Every build runs it with 150 orders. A longer run:
 
 ```bash
