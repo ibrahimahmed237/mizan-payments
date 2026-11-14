@@ -20,6 +20,7 @@
 
   <modules>
     <module>mizan-core</module>
+    <module>mizan-simulator</module>
   </modules>
 
   <properties>
