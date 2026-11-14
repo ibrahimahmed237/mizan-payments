@@ -1,0 +1,3 @@
+*
+!mizan-app/target/*.jar
+!mizan-simulator/target/*-exec.jar

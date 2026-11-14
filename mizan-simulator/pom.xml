@@ -37,6 +37,22 @@
 
   <build>
     <plugins>
+      <!-- Also a jar that runs alone, for docker compose. The plain jar stays the module's artifact: the service's tests use it. -->
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <classifier>exec</classifier>
+          <mainClass>dev.mizan.simulator.SimulatorMain</mainClass>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>repackage</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>

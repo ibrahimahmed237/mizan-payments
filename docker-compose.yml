@@ -1,0 +1,66 @@
+# Mizan, its database, and the simulator of both gateways, on one machine. For trying Mizan out, never for real money:
+# the simulator's keys below are its own test values, and the simulator must never be on a public address.
+#
+#   ./mvnw package -DskipTests
+#   docker compose up --build -d
+#   docker compose run --rm mizan keys create --name=demo --scopes=payments,backoffice
+#
+# The API is then on http://localhost:8080 and the simulator on http://localhost:8090.
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: mizan
+      POSTGRES_USER: mizan
+      POSTGRES_PASSWORD: mizan-local-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mizan -d mizan"]
+      interval: 2s
+      retries: 30
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+  simulator:
+    build:
+      context: .
+      args:
+        JAR: mizan-simulator/target/mizan-simulator-0.1.0-SNAPSHOT-exec.jar
+    environment:
+      SIMULATOR_PORT: "8090"
+      SIMULATOR_CARD_WEBHOOK_URL: http://mizan:8080/v1/webhooks/card
+      SIMULATOR_PAY_LATER_WEBHOOK_URL: http://mizan:8080/v1/webhooks/pay-later
+    ports:
+      - "8090:8090"
+
+  mizan:
+    build:
+      context: .
+      args:
+        JAR: mizan-app/target/mizan-app-0.1.0-SNAPSHOT.jar
+    depends_on:
+      db:
+        condition: service_healthy
+      simulator:
+        condition: service_started
+    environment:
+      MIZAN_DB_URL: jdbc:postgresql://db:5432/mizan
+      MIZAN_DB_USER: mizan
+      MIZAN_DB_PASSWORD: mizan-local-only
+      MIZAN_PUBLIC_URL: http://localhost:8080
+      MIZAN_RETURN_URL_PREFIXES: http://localhost:3000/
+      MIZAN_CARD_GATEWAY_URL: http://simulator:8090/card/v1
+      MIZAN_CARD_GATEWAY_KEY: sk_test_simulator
+      MIZAN_CARD_GATEWAY_WEBHOOK_SECRET: card-webhook-secret
+      MIZAN_PAY_LATER_URL: http://simulator:8090/paylater/v2
+      MIZAN_PAY_LATER_KEY: pl_test_simulator
+      MIZAN_PAY_LATER_WEBHOOK_SECRET: pay-later-webhook-secret
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/actuator/health/readiness | grep -q UP"]
+      interval: 3s
+      retries: 40
+
+volumes:
+  db-data:
