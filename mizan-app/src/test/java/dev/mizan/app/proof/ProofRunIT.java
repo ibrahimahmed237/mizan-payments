@@ -36,7 +36,8 @@ import org.junit.jupiter.api.Test;
  * settlement. At the end, Mizan's record is compared with the simulator's own book, which is what really happened
  * at the gateways. See docs/DESIGN.md, "Testing and proof".
  *
- * <p>The same seed gives the same run. {@code -Dmizan.proof.payments=2000 -Dmizan.proof.seed=7} runs a longer one.
+ * <p>The same seed gives the same plan. {@code -Dmizan.proof.payments=2000 -Dmizan.proof.seed=7} runs a longer one, and
+ * {@code -Dmizan.test.parallel=8} runs the workers' rounds 8 at a time, as the service does by default.
  */
 class ProofRunIT extends IntegrationTest {
 
@@ -433,6 +434,7 @@ class ProofRunIT extends IntegrationTest {
     report.add("| Seed | " + SEED + " |");
     report.add("| Orders | " + plans.size() + " |");
     report.add("| Payments | " + compared + " |");
+    report.add("| Rounds | " + System.getProperty("mizan.test.parallel", "1") + " at a time |");
     report.add("| Took | " + took.toSeconds() + " s |");
     report.add("");
     report.add("## Where the payments ended");

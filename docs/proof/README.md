@@ -10,7 +10,10 @@ Every build runs it with 150 orders. A longer run:
 
 The same seed gives the same plan. The report is written to `mizan-app/target/proof/report.md`.
 
-| Report | Orders | Payments | Faults | Took | Result |
-|---|---|---|---|---|---|
-| [Seed 7](run-2000-seed-7.md) | 2,000 | 2,068 | 1,268 | 138 s | Every check passed |
-| [Seed 11](run-10000-seed-11.md) | 10,000 | 10,333 | 6,252 | 613 s | Every check passed |
+| Report | Orders | Payments | Faults | Rounds | Took | Result |
+|---|---|---|---|---|---|---|
+| [Seed 7](run-2000-seed-7.md) | 2,000 | 2,068 | 1,268 | 1 at a time | 138 s | Every check passed |
+| [Seed 11](run-10000-seed-11.md) | 10,000 | 10,333 | 6,252 | 1 at a time | 613 s | Every check passed |
+| [Seed 23](run-10000-seed-23-side-by-side.md) | 10,000 | 10,306 | 6,188 | 8 at a time | 594 s | Every check passed |
+
+"Rounds" is how many payments the sync worker looks at side by side, and how many events the sender sends side by side (`-Dmizan.test.parallel`). The service's own default is 16 and 8.

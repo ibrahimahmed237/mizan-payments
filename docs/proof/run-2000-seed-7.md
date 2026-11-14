@@ -5,6 +5,7 @@
 | Seed | 7 |
 | Orders | 2000 |
 | Payments | 2068 |
+| Rounds | 1 at a time |
 | Took | 138 s |
 
 ## Where the payments ended
