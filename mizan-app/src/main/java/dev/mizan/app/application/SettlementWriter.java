@@ -76,9 +76,8 @@ public class SettlementWriter {
     boolean stillMissing = MissingSettlement.missing(
         settled.forSettlement(), settled.payment().capturedAt(), settled.payment().lastRefundAt(), settings.missingAfter(), now).isPresent();
     if (!stillMissing) {
-      discrepancies.openOfType(DiscrepancyType.MISSING_FROM_SETTLEMENT.name()).stream()
-          .filter(open -> payment.id().equals(open.paymentId()))
-          .forEach(open -> discrepancies.resolve(open.id(), "SETTLED_LATER", null, now));
+      discrepancies.lockOpenOf(payment.id(), DiscrepancyType.MISSING_FROM_SETTLEMENT.name())
+          .ifPresent(open -> discrepancies.resolve(open.id(), "SETTLED_LATER", null, now));
     }
   }
 

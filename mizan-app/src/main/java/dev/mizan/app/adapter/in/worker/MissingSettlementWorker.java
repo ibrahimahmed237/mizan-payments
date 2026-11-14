@@ -23,8 +23,7 @@ class MissingSettlementWorker {
   @Scheduled(cron = "${mizan.workers.missing-check-cron:0 30 5 * * *}", zone = "UTC")
   void run() {
     try {
-      var result = check.handle();
-      LOG.info("Daily settlement check: {} opened, {} closed", result.opened(), result.closed());
+      LOG.info("Daily settlement check: {} discrepancies opened", check.handle());
     } catch (RuntimeException e) {
       LOG.error("The daily settlement check failed", e);
     }

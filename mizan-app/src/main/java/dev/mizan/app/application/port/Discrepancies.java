@@ -33,8 +33,11 @@ public interface Discrepancies {
   /** Locks it for the rest of the transaction. */
   Optional<DiscrepancyRecord> lock(UUID id);
 
-  /** Open ones of a type that are about a payment and no line. */
-  List<DiscrepancyRecord> openOfType(String type);
+  /**
+   * Locks the open one of a type about this payment and no line, for the rest of the transaction. There is at most
+   * one. Empty when there is none, or when it was resolved while this waited for its lock.
+   */
+  Optional<DiscrepancyRecord> lockOpenOf(UUID paymentId, String type);
 
   /** Newest first. Each filter may be null. */
   List<DiscrepancyRecord> list(Boolean open, String type, int limit);

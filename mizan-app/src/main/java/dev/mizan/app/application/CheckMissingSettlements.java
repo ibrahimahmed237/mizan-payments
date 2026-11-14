@@ -1,6 +1,5 @@
 package dev.mizan.app.application;
 
-import dev.mizan.app.application.model.DiscrepancyRecord;
 import dev.mizan.app.application.model.PaymentRecord;
 import dev.mizan.app.application.port.Discrepancies;
 import dev.mizan.app.application.port.Payments;
@@ -9,19 +8,18 @@ import dev.mizan.core.settlement.DiscrepancyType;
 import dev.mizan.core.settlement.MissingSettlement;
 import java.time.Instant;
 import java.time.InstantSource;
+import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 /**
  * The daily check: a capture that no file paid out, or a refund that no file took back, after the gateway's usual
- * time. Each such payment gets one open discrepancy, which closes by itself when a later file settles the rest.
+ * time. Each such payment gets one open discrepancy, which closes by itself when a later line settles the rest.
  * See docs/lld/reconciliation.md, "Step 3".
  */
 @Service
 public class CheckMissingSettlements {
-
-  /** @param opened discrepancies opened by this check; @param closed discrepancies it found settled since */
-  public record Result(int opened, int closed) {}
 
   private static final String MISSING = DiscrepancyType.MISSING_FROM_SETTLEMENT.name();
 
@@ -43,30 +41,35 @@ public class CheckMissingSettlements {
     this.clock = clock;
   }
 
-  public Result handle() {
-    return transactions.run(() -> {
-      Instant now = clock.instant();
-      int opened = 0;
-      for (PaymentRecord payment : payments.unsettledSince(now.minus(settings.missingAfter()))) {
-        OptionalLong missing = missing(payment, now);
-        if (missing.isPresent()) {
-          var id = discrepancies.open(MISSING, payment.id(), missing.getAsLong(), 0L, now);
-          if (id.isPresent()) {
-            writer.told(id.get(), DiscrepancyType.MISSING_FROM_SETTLEMENT, payment, now);
-            opened++;
-          }
-        }
+  /**
+   * Opens the discrepancies. It closes none: only a matched line lowers what is missing, and matching closes the
+   * discrepancy itself, under the payment's lock ({@link SettlementWriter#matched}).
+   *
+   * @return how many discrepancies it opened
+   */
+  public int handle() {
+    Instant start = clock.instant();
+    int opened = 0;
+    for (PaymentRecord candidate : payments.unsettledSince(start.minus(settings.missingAfter()))) {
+      if (transactions.run(() -> openIfMissing(candidate.id()))) {
+        opened++;
       }
-      int closed = 0;
-      for (DiscrepancyRecord open : discrepancies.openOfType(MISSING)) {
-        PaymentRecord payment = payments.find(open.paymentId()).orElseThrow();
-        if (missing(payment, now).isEmpty()) {
-          discrepancies.resolve(open.id(), "SETTLED_LATER", null, now);
-          closed++;
-        }
-      }
-      return new Result(opened, closed);
-    });
+    }
+    return opened;
+  }
+
+  // One short transaction per payment, under the payment's lock: a line matched meanwhile is seen, and the
+  // workers are not held up by a long check.
+  private boolean openIfMissing(UUID paymentId) {
+    Instant now = clock.instant();
+    PaymentRecord payment = payments.lock(paymentId).orElseThrow();
+    OptionalLong missing = missing(payment, now);
+    if (missing.isEmpty()) {
+      return false; // settled since the list was read
+    }
+    Optional<UUID> id = discrepancies.open(MISSING, payment.id(), missing.getAsLong(), 0L, now);
+    id.ifPresent(opened -> writer.told(opened, DiscrepancyType.MISSING_FROM_SETTLEMENT, payment, now));
+    return id.isPresent();
   }
 
   private OptionalLong missing(PaymentRecord payment, Instant now) {

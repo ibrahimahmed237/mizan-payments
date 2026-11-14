@@ -460,6 +460,24 @@ class ReconciliationIT extends IntegrationTest {
     assertThat(discrepancies(id)).containsExactly("MISSING_FROM_SETTLEMENT OPEN 4000 0 0");
   }
 
+  @Test
+  void a_file_that_settles_only_part_of_what_is_missing_leaves_it_open() {
+    String order = newOrder();
+    String id = captured(order, 15_000);
+    api.post("/v1/payments/" + id + "/refunds", Map.of("amount", 4_000));
+    world.simulator.planFile(FileFault.MISSING_LINE, order); // the file will have the refund, not the capture
+    String file = payout(Gateway.CARD_GATEWAY);
+    advance(Duration.ofDays(3));
+    check();
+    assertThat(discrepancies(id)).containsExactly("MISSING_FROM_SETTLEMENT OPEN 19000 0 0"); // both are missing
+
+    upload(file);
+    match();
+
+    assertThat(settled(id, "settled_refunded")).isEqualTo(4_000);
+    assertThat(discrepancies(id)).containsExactly("MISSING_FROM_SETTLEMENT OPEN 19000 0 0"); // the capture still is
+  }
+
   private void check() {
     world.app.getBean(dev.mizan.app.application.CheckMissingSettlements.class).handle();
   }

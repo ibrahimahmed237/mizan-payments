@@ -76,9 +76,11 @@ class JdbcDiscrepancies implements Discrepancies {
   }
 
   @Override
-  public List<DiscrepancyRecord> openOfType(String type) {
-    return jdbc.sql("SELECT " + COLUMNS + " FROM discrepancies WHERE status = 'OPEN' AND type = ? AND line_id IS NULL AND payment_id IS NOT NULL ORDER BY seq")
-        .param(type).query(JdbcDiscrepancies::read).list();
+  public Optional<DiscrepancyRecord> lockOpenOf(UUID paymentId, String type) {
+    Sql.requireTransaction();
+    // FOR UPDATE reads the row again after a wait: one resolved meanwhile no longer matches status = 'OPEN'.
+    return jdbc.sql("SELECT " + COLUMNS + " FROM discrepancies WHERE status = 'OPEN' AND payment_id = ? AND type = ? AND line_id IS NULL FOR UPDATE")
+        .param(paymentId).param(type).query(JdbcDiscrepancies::read).optional();
   }
 
   @Override
