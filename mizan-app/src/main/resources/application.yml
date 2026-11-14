@@ -41,6 +41,9 @@ management:
 
 server:
   port: ${MIZAN_PORT:8080}
+  # Behind a load balancer every request comes from the load balancer's address. With this, the customer's own
+  # address is taken from X-Forwarded-For, but only when the request comes from a private address (the balancer).
+  forward-headers-strategy: native
   error:
     whitelabel:
       enabled: false

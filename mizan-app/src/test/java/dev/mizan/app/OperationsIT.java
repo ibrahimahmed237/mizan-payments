@@ -65,6 +65,20 @@ class OperationsIT extends IntegrationTest {
       Api browser = new Api(url, null);
       assertThat(browser.get("/v1/return/" + id).status()).isEqualTo(303);
       assertThat(browser.get("/v1/return/" + id).status()).isEqualTo(429); // the return page has its own, smaller limit
+      // Behind a load balancer, the limit is per customer, not for all of them together: the balancer says who it is.
+      assertThat(returnsFor("203.0.113.7", url, id)).isEqualTo(303);
+      assertThat(returnsFor("203.0.113.7", url, id)).isEqualTo(429);
+      assertThat(returnsFor("203.0.113.8", url, id)).isEqualTo(303);
+    }
+  }
+
+  /** The status of the return page for a customer at this address, as a load balancer in front of Mizan would send it. */
+  private static int returnsFor(String customerAddress, String url, String paymentId) {
+    HttpRequest request = HttpRequest.newBuilder(URI.create(url + "/v1/return/" + paymentId)).header("X-Forwarded-For", customerAddress).build();
+    try {
+      return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.discarding()).statusCode();
+    } catch (IOException | InterruptedException e) {
+      throw new IllegalStateException(e);
     }
   }
 
