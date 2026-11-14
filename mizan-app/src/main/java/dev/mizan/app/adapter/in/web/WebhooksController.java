@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -21,6 +22,8 @@ class WebhooksController {
 
   /** A webhook is small. A larger body is not read. */
   static final int MAX_BODY = 64 * 1024;
+  /** The gateways that send webhooks, as they are named in the address. */
+  static final Set<String> GATEWAYS = Set.of("card", "pay-later");
 
   private final WebhookReader reader;
   private final ReceiveWebhook receive;
@@ -37,17 +40,17 @@ class WebhooksController {
       @PathVariable String gateway,
       @RequestHeader(value = "X-Signature", required = false) String signature,
       HttpServletRequest request) throws IOException {
+    // Before anything is counted: the name comes from the address, and a metric per made-up name would never end.
+    if (!GATEWAYS.contains(gateway)) {
+      throw Problem.notFound("gateway");
+    }
     byte[] body = request.getInputStream().readNBytes(MAX_BODY + 1);
     if (body.length > MAX_BODY) {
       throw new Problem(Problem.Kind.TOO_LARGE, "body_too_large", "A webhook is at most 64 KB.");
     }
     ReceiveWebhook.Event event;
     try {
-      event = switch (gateway) {
-        case "card" -> reader.card(body);
-        case "pay-later" -> reader.payLater(body, signature);
-        default -> throw Problem.notFound("gateway");
-      };
+      event = gateway.equals("card") ? reader.card(body) : reader.payLater(body, signature);
     } catch (Problem refused) {
       count(gateway, refused.code()); // many "unauthorized": a wrong secret, or someone trying
       throw refused;

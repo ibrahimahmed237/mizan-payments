@@ -64,7 +64,9 @@ public final class LimitsFilter extends OncePerRequestFilter {
     }
     long waitSeconds;
     if (path.startsWith("/v1/webhooks/")) {
-      waitSeconds = webhooks.take(path);
+      // One limit per gateway. Every other address under /v1/webhooks shares one, so made-up names gain nothing.
+      String gateway = path.substring("/v1/webhooks/".length());
+      waitSeconds = webhooks.take(WebhooksController.GATEWAYS.contains(gateway) ? gateway : "unknown");
     } else if (path.startsWith("/v1/return/")) {
       waitSeconds = returns.take(request.getRemoteAddr());
     } else {

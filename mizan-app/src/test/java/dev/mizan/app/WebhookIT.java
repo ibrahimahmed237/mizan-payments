@@ -9,6 +9,7 @@ import dev.mizan.core.payment.GatewayStatus;
 import dev.mizan.simulator.Call;
 import dev.mizan.simulator.Fault;
 import dev.mizan.simulator.Simulator;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -189,6 +190,8 @@ class WebhookIT extends IntegrationTest {
   @Test
   void a_gateway_that_does_not_exist_is_not_found_and_webhooks_need_no_api_key() {
     assertThat(gateway.send("POST", "/v1/webhooks/other", cardBody(newEvent(), "payment_paid", "p1", cardSecret(), "paid"), null).status()).isEqualTo(404);
+    // A made-up name leaves no metric behind: anyone can send these, and each name would stay in memory for good.
+    assertThat(world.app.getBean(MeterRegistry.class).find("mizan.webhooks").tag("gateway", "other").counters()).isEmpty();
     assertThat(gateway.get("/v1/webhooks/card").status()).isEqualTo(405);
     assertThat(gateway.get("/v1/payments").status()).isEqualTo(401); // the API itself still needs a key
   }
