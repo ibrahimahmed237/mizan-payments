@@ -49,6 +49,14 @@ class SettlementFileParserTest {
   }
 
   @Test
+  void a_byte_order_mark_at_the_start_is_not_part_of_the_file() {
+    SettlementFile file = parse("\uFEFF" + header(9_750, 1), CAPTURE);
+
+    assertThat(file.header().payoutId()).isEqualTo("payout_7");
+    assertThat(refusal(header(9_750, 1), "\uFEFF" + CAPTURE)).isEqualTo("malformed_file"); // only at the very start
+  }
+
+  @Test
   void a_payout_with_no_lines_is_a_file() {
     assertThat(parse(header(0, 0)).lines()).isEmpty();
   }

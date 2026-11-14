@@ -28,6 +28,7 @@ public final class SettlementFileParser {
   /** No real payout has more lines; a larger file is a mistake or an attack. */
   public static final int MAX_LINES = 500_000;
 
+  private static final String BYTE_ORDER_MARK = "\uFEFF";
   private static final Pattern ID = Pattern.compile("[A-Za-z0-9._:-]{1,64}");
   private static final Pattern TYPE = Pattern.compile("[a-z_]{1,32}");
 
@@ -42,6 +43,9 @@ public final class SettlementFileParser {
       String first = readLine(reader);
       if (first == null) {
         throw malformed("The file is empty.");
+      }
+      if (first.startsWith(BYTE_ORDER_MARK)) {
+        first = first.substring(1); // some tools write this mark at the start of a UTF-8 file; it is not text
       }
       SettlementHeader header = header(first);
       List<SettlementLine> lines = new ArrayList<>();

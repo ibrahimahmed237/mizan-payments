@@ -42,7 +42,7 @@ The file is read one line at a time. It is refused as a whole, and nothing is sa
 
 The same file again (same `payout_id`, same hash) is answered with the first import: `200` and the header `Idempotent-Replay: true`. Nothing happens twice.
 
-`POST /v1/settlements` takes the file itself as the body, as text, up to 50 MB. The answer is the file and how far its matching has come:
+`POST /v1/settlements` takes the file itself as the body, as UTF-8 text, up to 50 MB. A byte order mark at the start, which some tools write, is skipped. The answer is the file and how far its matching has come:
 
 ```json
 201 Created
