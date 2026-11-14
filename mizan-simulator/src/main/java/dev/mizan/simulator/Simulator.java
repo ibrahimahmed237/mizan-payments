@@ -127,6 +127,14 @@ public final class Simulator {
     stickyFaults.computeIfAbsent(reference, k -> EnumSet.noneOf(Fault.class)).add(fault);
   }
 
+  /** The order's payments no longer have this fault: the gateway's trouble is over. */
+  public synchronized void unstick(String reference, Fault fault) {
+    Set<Fault> faults = stickyFaults.get(reference);
+    if (faults != null) {
+      faults.remove(fault);
+    }
+  }
+
   /** The next {@code times} fetches of the order's payments answer 503. */
   public synchronized void fetchDown(String reference, int times) {
     fetchesDown.put(reference, times);

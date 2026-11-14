@@ -180,6 +180,17 @@ class FaultTest {
   }
 
   @Test
+  void a_fault_that_stays_can_be_ended() throws IOException {
+    kit.patience = Duration.ofSeconds(5);
+    String id = kit.cardPayment("1111", 15_000, false, "order-1");
+    kit.simulator.stick("order-1", Fault.AMOUNT_CHANGED);
+    kit.simulator.unstick("order-1", Fault.AMOUNT_CHANGED);
+    kit.simulator.unstick("order-2", Fault.AMOUNT_CHANGED); // an order with no faults: nothing to end
+
+    assertThat(kit.card("GET", "/payments/" + id, null).json().path("amount").asLong()).isEqualTo(15_000);
+  }
+
+  @Test
   void hold_released_keeps_the_record_authorized_and_refuses_the_capture() throws IOException {
     kit.patience = Duration.ofSeconds(5);
     String card = kit.cardPayment("1111", 15_000, true, "order-1");
