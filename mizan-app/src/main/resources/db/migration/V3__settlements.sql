@@ -33,14 +33,13 @@ CREATE TABLE settlement_lines (
   next_attempt_at     timestamptz,                          -- when the matching worker takes it; null once it is handled
   handled_at          timestamptz,
   CONSTRAINT settlement_lines_net CHECK (net = gross - fee),
-  CONSTRAINT settlement_lines_place UNIQUE (file_id, line_number),
+  CONSTRAINT settlement_lines_place UNIQUE (file_id, line_number),   -- also the index for a file's lines
   CONSTRAINT settlement_lines_waiting CHECK ((status IN ('NEW', 'NEEDS_SYNC')) = (next_attempt_at IS NOT NULL))
 );
 
 CREATE INDEX settlement_lines_transaction ON settlement_lines (gateway, transaction_id, seq);
 CREATE INDEX settlement_lines_due ON settlement_lines (next_attempt_at) WHERE next_attempt_at IS NOT NULL;
 CREATE INDEX settlement_lines_of_payment ON settlement_lines (payment_id);
-CREATE INDEX settlement_lines_of_file ON settlement_lines (file_id, line_number);
 
 -- The order in which discrepancies were opened: many can open in the same instant.
 ALTER TABLE discrepancies ADD COLUMN seq bigint GENERATED ALWAYS AS IDENTITY;

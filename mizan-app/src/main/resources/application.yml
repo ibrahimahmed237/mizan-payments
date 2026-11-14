@@ -7,6 +7,10 @@ spring:
     url: ${MIZAN_DB_URL:}
     username: ${MIZAN_DB_USER:}
     password: ${MIZAN_DB_PASSWORD:}
+    hikari:
+      data-source-properties:
+        # A batch of inserts (the lines of a settlement file) is sent as a few statements, not one per row.
+        reWriteBatchedInserts: true
   jackson:
     property-naming-strategy: SNAKE_CASE
     deserialization:

@@ -152,6 +152,32 @@ class ReconciliationIT extends IntegrationTest {
   }
 
   @Test
+  void a_file_of_200_000_lines_is_taken_in_one_call() {
+    int count = 200_000;
+    String payout = "payout_large_" + UUID.randomUUID();
+    StringBuilder content = new StringBuilder(count * 64);
+    content.append("H,").append(payout).append(",card_gateway,SAR,2031-01-01,").append(975L * count).append(',').append(count);
+    for (int i = 1; i <= count; i++) {
+      content.append("\nL,txn_large_").append(i).append(",pay_large_").append(i).append(",capture,1000,25,975,2030-12-31T09:00:00Z");
+    }
+    long started = System.nanoTime();
+
+    Answer uploaded = upload(content.toString());
+
+    long seconds = (System.nanoTime() - started) / 1_000_000_000;
+    try {
+      assertThat(uploaded.status()).isEqualTo(201);
+      assertThat(jdbc.sql("SELECT count(*) FROM settlement_lines WHERE file_id = ?")
+          .param(UUID.fromString(uploaded.text("id"))).query(Long.class).single()).isEqualTo(count);
+      assertThat(seconds).as("seconds to take the file (about 9 here)").isLessThan(25);
+    } finally {
+      // These lines name no payment of this world. They are taken away before another test's matching meets them.
+      jdbc.sql("DELETE FROM settlement_lines WHERE transaction_id LIKE 'txn_large_%'").update();
+      jdbc.sql("DELETE FROM settlement_files WHERE payout_id = ?").param(payout).update();
+    }
+  }
+
+  @Test
   void settlements_are_for_finance_only() {
     assertThat(api.send("POST", "/v1/settlements", "H,x", null).status()).isEqualTo(403); // the store's key
     assertThat(finance.withKey(null).get("/v1/settlements").status()).isEqualTo(401);
