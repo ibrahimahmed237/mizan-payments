@@ -9,6 +9,7 @@ import java.util.UUID;
  * @param paymentId the payment it is about; null when Mizan has none
  * @param lineId the settlement line it is about; null when it is about no line
  * @param suspenseAmount the line's net amount held in suspense for it; zero when it holds none
+ * @param seq the order in which discrepancies were opened; a list's pages go by it
  */
 public record DiscrepancyRecord(
     UUID id,
@@ -24,4 +25,5 @@ public record DiscrepancyRecord(
     String resolution,
     String note,
     Instant createdAt,
-    Instant resolvedAt) {}
+    Instant resolvedAt,
+    long seq) {}

@@ -17,6 +17,7 @@ import dev.mizan.simulator.Call;
 import dev.mizan.simulator.Fault;
 import dev.mizan.simulator.FileFault;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -629,6 +630,35 @@ class ReconciliationIT extends IntegrationTest {
     assertThat(List.of(report.path("open_discrepancies").toString())).anyMatch(text -> text.contains("UNKNOWN_PAYMENT"));
     assertThat(api.get("/v1/ledger/balances").status()).isEqualTo(403); // not for the store's key
     assertThat(finance.get("/v1/ledger/entries?payment_id=" + UUID.randomUUID()).status()).isEqualTo(404);
+  }
+
+  @Test
+  void a_long_list_of_discrepancies_comes_in_pages_and_each_one_comes_once() {
+    List<String> payments = new ArrayList<>();
+    for (int i = 0; i < 5; i++) {
+      String order = newOrder();
+      payments.add(captured(order, 15_000));
+      world.simulator.planFile(FileFault.WRONG_FEE, order);
+    }
+    upload(payout(Gateway.CARD_GATEWAY));
+    match();
+
+    List<String> seen = new ArrayList<>();
+    String cursor = null;
+    int pages = 0;
+    do {
+      JsonNode page = finance.get("/v1/discrepancies?status=OPEN&type=FEE_MISMATCH&limit=2" + (cursor == null ? "" : "&cursor=" + cursor)).json();
+      assertThat(page.path("data").size()).isLessThanOrEqualTo(2);
+      page.path("data").forEach(one -> seen.add(one.path("payment_id").asString()));
+      cursor = page.path("next_cursor").asString(null);
+      pages++;
+    } while (cursor != null && pages < 1_000);
+
+    // Earlier tests left theirs too; these five are the newest, so they come first, the last one opened first.
+    assertThat(pages).isGreaterThanOrEqualTo(3);
+    assertThat(seen).doesNotHaveDuplicates();
+    assertThat(seen.subList(0, 5)).containsExactly(payments.get(4), payments.get(3), payments.get(2), payments.get(1), payments.get(0));
+    assertThat(finance.get("/v1/discrepancies?cursor=not-a-cursor").code()).isEqualTo("invalid_cursor");
   }
 
   @Test

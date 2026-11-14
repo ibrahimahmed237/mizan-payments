@@ -1,5 +1,6 @@
 package dev.mizan.app.application;
 
+import dev.mizan.app.application.model.DiscrepancyRecord;
 import dev.mizan.app.application.port.Discrepancies;
 import dev.mizan.app.application.port.LedgerQueries;
 import dev.mizan.app.application.port.Payments;
@@ -31,6 +32,9 @@ public class BackofficeQueries {
    */
   public record Reconciliation(Map<String, Long> unsettled, long suspense, List<Discrepancies.OpenOfType> openDiscrepancies) {}
 
+  /** @param next where the next page starts; null when this was the last page */
+  public record DiscrepancyPage(List<DiscrepancyView> discrepancies, Long next) {}
+
   public static final int MAX_PAGE = 100;
 
   private final Settlements settlements;
@@ -61,15 +65,24 @@ public class BackofficeQueries {
     return DiscrepancyView.of(discrepancies.find(id).orElseThrow(() -> Problem.notFound("discrepancy")));
   }
 
-  /** @param status {@code OPEN}, {@code RESOLVED} or null for both */
-  public List<DiscrepancyView> discrepancies(String status, String type) {
+  /**
+   * One page of discrepancies, newest first.
+   *
+   * @param status {@code OPEN}, {@code RESOLVED} or null for both
+   * @param before the place the page before this one ended at; null for the first page
+   */
+  public DiscrepancyPage discrepancies(String status, String type, Long before, int limit) {
     Boolean open = switch (status == null ? "" : status) {
       case "" -> null;
       case "OPEN" -> true;
       case "RESOLVED" -> false;
       default -> throw Problem.invalid("invalid_status", "The status must be OPEN or RESOLVED.");
     };
-    return discrepancies.list(open, type, MAX_PAGE).stream().map(DiscrepancyView::of).toList();
+    int size = Math.max(1, Math.min(limit, MAX_PAGE));
+    List<DiscrepancyRecord> found = discrepancies.list(open, type, before, size + 1); // one more, to know if a page follows
+    List<DiscrepancyRecord> page = found.size() > size ? found.subList(0, size) : found;
+    return new DiscrepancyPage(
+        page.stream().map(DiscrepancyView::of).toList(), found.size() > size ? page.get(page.size() - 1).seq() : null);
   }
 
   public Balances balances() {

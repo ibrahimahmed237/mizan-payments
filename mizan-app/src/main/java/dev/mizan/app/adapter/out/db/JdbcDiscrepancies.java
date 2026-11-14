@@ -19,7 +19,7 @@ class JdbcDiscrepancies implements Discrepancies {
 
   private static final String COLUMNS = """
       id, type, status, payment_id, line_id, gateway, gateway_payment_id, expected, actual, suspense_amount, resolution, note,
-      created_at, resolved_at
+      created_at, resolved_at, seq
       """;
 
   private final JdbcClient jdbc;
@@ -90,9 +90,13 @@ class JdbcDiscrepancies implements Discrepancies {
   }
 
   @Override
-  public List<DiscrepancyRecord> list(Boolean open, String type, int limit) {
+  public List<DiscrepancyRecord> list(Boolean open, String type, Long before, int limit) {
     var where = new ArrayList<String>();
     var values = new ArrayList<Object>();
+    if (before != null) {
+      where.add("seq < ?");
+      values.add(before);
+    }
     if (open != null) {
       where.add("status = ?");
       values.add(open ? "OPEN" : "RESOLVED");
@@ -125,6 +129,6 @@ class JdbcDiscrepancies implements Discrepancies {
         Sql.uuid(row, "id"), row.getString("type"), "OPEN".equals(row.getString("status")), Sql.uuid(row, "payment_id"),
         Sql.uuid(row, "line_id"), row.getString("gateway"), row.getString("gateway_payment_id"), expectedOrNull, actualOrNull,
         row.getLong("suspense_amount"), row.getString("resolution"), row.getString("note"), Sql.instant(row, "created_at"),
-        Sql.instant(row, "resolved_at"));
+        Sql.instant(row, "resolved_at"), row.getLong("seq"));
   }
 }

@@ -174,14 +174,23 @@ paths:
   /v1/discrepancies:
     get:
       tags: [backoffice]
-      summary: Discrepancies, newest first
+      summary: Discrepancies, newest first, in pages
       parameters:
         - { name: status, in: query, schema: { type: string, enum: [OPEN, RESOLVED] } }
         - { name: type, in: query, schema: { type: string } }
+        - { name: cursor, in: query, description: The next_cursor of the page before, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
       responses:
         '200':
-          description: The discrepancies
-          content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/Discrepancy' } } } } } }
+          description: One page. next_cursor is null on the last page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Discrepancy' } }
+                  next_cursor: { type: [string, 'null'] }
+        '422': { $ref: '#/components/responses/Problem' }
 
   /v1/discrepancies/{id}:
     get:

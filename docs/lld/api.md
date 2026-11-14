@@ -26,13 +26,13 @@ The key is sent as `Authorization: Bearer <key>`. No key or a wrong key: `401`. 
 | `POST /v1/webhooks/card`, `POST /v1/webhooks/pay-later` | — (gateway secret) | A webhook from a gateway ([workers](workers.md#a-webhook-comes-in)) |
 | `GET /v1/return/{id}` | — | The customer comes back. `303` to the store ([workers](workers.md#the-customer-comes-back)) |
 | `POST /v1/settlements` | backoffice | Uploads a settlement file: the body is the file ([reconciliation](reconciliation.md#step-1--accept-or-refuse-the-file)) |
-| `GET /v1/settlements`, `GET /v1/settlements/{id}` | backoffice | Files and their progress, newest first |
-| `GET /v1/discrepancies?status=&type=`, `GET /v1/discrepancies/{id}` | backoffice | Lists discrepancies, newest first. `status` is `OPEN` or `RESOLVED` |
+| `GET /v1/settlements`, `GET /v1/settlements/{id}` | backoffice | Files and their progress, newest first. The list holds the newest 100 |
+| `GET /v1/discrepancies?status=&type=&cursor=&limit=`, `GET /v1/discrepancies/{id}` | backoffice | Lists discrepancies, newest first, in pages like the payments' list. `status` is `OPEN` or `RESOLVED` |
 | `POST /v1/discrepancies/{id}/retry`, `/accept` | backoffice | Closes a discrepancy ([reconciliation](reconciliation.md#discrepancies)) |
 | `GET /v1/ledger/balances` | backoffice | Each account's debits, credits and balance, and whether the books balance |
 | `GET /v1/ledger/entries?payment_id=` | backoffice | A payment's entries with their postings, oldest first |
 | `GET /v1/reports/reconciliation` | backoffice | Unsettled money by age (up to 3 days, 3 to 7, over 7), the suspense balance, open discrepancies by type |
-| `GET /v1/events?status=`, `POST /v1/events/{id}/redeliver` | backoffice | Events to the store |
+| `GET /v1/events?status=&payment_id=`, `POST /v1/events/{id}/redeliver` | backoffice | Events to the store. The list holds the newest 100 that fit the filters |
 
 ## Create a payment
 

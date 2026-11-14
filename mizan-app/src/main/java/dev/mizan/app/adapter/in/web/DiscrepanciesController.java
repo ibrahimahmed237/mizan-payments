@@ -4,7 +4,9 @@ import dev.mizan.app.application.BackofficeQueries;
 import dev.mizan.app.application.Problem;
 import dev.mizan.app.application.ResolveDiscrepancy;
 import dev.mizan.app.application.view.DiscrepancyView;
-import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,8 +34,32 @@ class DiscrepanciesController {
   }
 
   @GetMapping
-  Map<String, List<DiscrepancyView>> list(@RequestParam(required = false) String status, @RequestParam(required = false) String type) {
-    return Map.of("data", queries.discrepancies(status, type));
+  Map<String, Object> list(
+      @RequestParam(required = false) String status,
+      @RequestParam(required = false) String type,
+      @RequestParam(required = false) String cursor,
+      @RequestParam(defaultValue = "20") int limit) {
+    BackofficeQueries.DiscrepancyPage page = queries.discrepancies(status, type, place(cursor), limit);
+    Map<String, Object> answer = new LinkedHashMap<>();
+    answer.put("data", page.discrepancies());
+    answer.put("next_cursor", page.next() == null ? null : cursor(page.next()));
+    return answer;
+  }
+
+  /** A cursor is a place in the list, written so that a caller treats it as one opaque word. */
+  private static String cursor(long place) {
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(Long.toString(place).getBytes(StandardCharsets.UTF_8));
+  }
+
+  private static Long place(String cursor) {
+    if (cursor == null) {
+      return null;
+    }
+    try {
+      return Long.valueOf(new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8));
+    } catch (RuntimeException e) {
+      throw Problem.invalid("invalid_cursor", "The cursor is not one that this API gave.");
+    }
   }
 
   @GetMapping("/{id}")

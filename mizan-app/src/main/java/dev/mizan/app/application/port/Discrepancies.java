@@ -45,8 +45,12 @@ public interface Discrepancies {
   /** Counted by the database, by type, in the order of the type's name. */
   List<OpenOfType> openByType();
 
-  /** Newest first. Each filter may be null. */
-  List<DiscrepancyRecord> list(Boolean open, String type, int limit);
+  /**
+   * Newest first. Each filter may be null.
+   *
+   * @param before only those opened before the one with this {@code seq}; null starts at the newest
+   */
+  List<DiscrepancyRecord> list(Boolean open, String type, Long before, int limit);
 
   void resolve(UUID id, String resolution, String note, Instant at);
 }
