@@ -27,7 +27,7 @@ Amounts are in halalas.
 
 ## Step 1 — accept or refuse the file
 
-The file is read as a stream. It is refused as a whole, and nothing is saved, if:
+The file is read one line at a time. It is refused as a whole, and nothing is saved, if:
 
 | Check | Error |
 |---|---|

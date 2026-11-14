@@ -39,10 +39,10 @@ flowchart LR
 
 | Build | Done when |
 |---|---|
-| The Maven build with four modules | `./mvnw verify` passes |
-| Layer tests (ArchUnit) | A class of `mizan-core` that uses Spring fails the build; an adapter that is used by the application layer fails the build |
-| A docs check | A broken link or a diagram that does not start with a known type fails the build |
-| CI | The build runs on every push |
+| The Maven build. Modules are added as they are built | `./mvnw verify` passes; a compiler warning fails the build |
+| Layer tests (ArchUnit) | A class of `mizan-core` that uses anything but the JDK fails the build. The service's layers are added with the service (M3) |
+| A docs check | A broken link or a diagram that does not start with a known type fails CI |
+| CI | The build and the docs check run on every push |
 
 ### M1 — The rules (`mizan-core`)
 

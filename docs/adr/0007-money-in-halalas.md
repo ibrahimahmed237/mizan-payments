@@ -9,7 +9,7 @@ Money in floating-point numbers loses halalas. Money in decimals invites roundin
 
 ## Decision
 
-An amount is a **64-bit whole number of halalas** with a currency code. `mizan-core` has a `Money` type that cannot be made from a fraction. Only `SAR` is accepted.
+An amount is a **64-bit whole number of halalas** (a Java `long`) with a currency code. Only `SAR` is accepted. The few places where money meets text, such as a provider that writes `"150.00"`, go through one class, `Money`, which reads such text exactly or refuses it.
 
 Rounding happens in one place only: the fee formula, which rounds half up and says so.
 
