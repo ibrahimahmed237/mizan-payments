@@ -132,7 +132,12 @@ public final class World {
         Map.entry("mizan.http.timeout", GATEWAY_TIMEOUT.toMillis() + "ms"),
         Map.entry("mizan.store.event-url", store.url()),
         Map.entry("mizan.store.event-secret", StoreReceiver.SECRET),
-        Map.entry("mizan.workers.enabled", "false"));
+        Map.entry("mizan.workers.enabled", "false"),
+        // The tests send hundreds of requests a second with one key. The limits have their own test, with low ones.
+        Map.entry("mizan.limits.api-per-second", "100000"),
+        Map.entry("mizan.limits.api-burst", "100000"),
+        Map.entry("mizan.limits.returns-per-second", "100000"),
+        Map.entry("mizan.limits.returns-burst", "100000"));
 
     app = start(settings);
     baseUrl = url(app);
