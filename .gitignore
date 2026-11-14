@@ -8,3 +8,4 @@ target/
 .env
 *.jks
 *.p12
+.jqwik-database
