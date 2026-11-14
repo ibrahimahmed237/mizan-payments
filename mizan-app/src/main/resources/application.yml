@@ -61,3 +61,8 @@ mizan:
     late-capture: REFUND
   operation:
     quiet-time: 1m
+
+logging:
+  pattern:
+    # Each line of a request carries its id, the same one the caller gets in X-Request-Id.
+    correlation: "[%X{request_id:-}] "
