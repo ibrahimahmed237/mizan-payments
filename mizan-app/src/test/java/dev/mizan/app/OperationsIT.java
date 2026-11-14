@@ -160,6 +160,30 @@ class OperationsIT extends IntegrationTest {
   }
 
   @Test
+  void the_gauges_about_payments_say_what_the_table_says() throws InterruptedException {
+    MeterRegistry meters = world.app.getBean(MeterRegistry.class);
+    captured(newOrder(), 15_000);
+    String waiting = pay(newOrder(), 15_000, "3333", "AUTO").text("id"); // waits for the bank's code
+    advance(Duration.ofSeconds(60));
+    pay(newOrder(), 15_000, "3333", "AUTO"); // a younger one
+    advance(Duration.ofSeconds(30));
+    Thread.sleep(1_100); // the gauges keep one read of the table for a second
+
+    for (String state : List.of("PENDING", "AUTHORIZED", "CAPTURED", "FAILED", "CANCELED", "EXPIRED")) {
+      assertThat(meters.get("mizan.payments").tag("state", state.toLowerCase(java.util.Locale.ROOT)).gauge().value()).as(state)
+          .isEqualTo((double) jdbc.sql("SELECT count(*) FROM payments WHERE status = ?").param(state).query(Long.class).single());
+    }
+    assertThat(meters.get("mizan.late_captures").gauge().value())
+        .isEqualTo((double) jdbc.sql("SELECT count(*) FROM payments WHERE late").query(Long.class).single());
+    // The oldest pending payment, not the newest: at least the one made here 90 seconds ago, or an earlier test's.
+    OffsetDateTime oldest = jdbc.sql("SELECT min(created_at) FROM payments WHERE status = 'PENDING'").query(OffsetDateTime.class).single();
+    assertThat(meters.get("mizan.payments.pending.oldest.seconds").gauge().value())
+        .isEqualTo((double) Duration.between(oldest.toInstant(), now()).toSeconds())
+        .isGreaterThanOrEqualTo(90.0);
+    assertThat(payment(waiting).text("status")).isEqualTo("PENDING");
+  }
+
+  @Test
   void money_received_and_not_explained_shows_as_a_positive_suspense() {
     MeterRegistry meters = world.app.getBean(MeterRegistry.class);
     freshPayouts();
