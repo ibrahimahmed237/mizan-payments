@@ -21,6 +21,7 @@
   <modules>
     <module>mizan-core</module>
     <module>mizan-simulator</module>
+    <module>mizan-app</module>
   </modules>
 
   <properties>
