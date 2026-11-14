@@ -45,8 +45,9 @@ public interface Payments {
 
   /**
    * Takes up to {@code limit} payments whose time to be looked at has come, and pushes that time to
-   * {@code leaseEnds} for each, as {@link #claim} does. This is a lease: another worker does not take them meanwhile, and if this worker
-   * dies they come back when the lease ends.
+   * {@code leaseEnds} for each. This is a lease: another worker does not take them meanwhile, and if this worker
+   * dies they come back when the lease ends. The "look requested" flag stays up: each step takes it down with
+   * {@link #claim}, just before its own fetch.
    */
   List<UUID> claimDue(Instant now, Instant leaseEnds, int limit);
 

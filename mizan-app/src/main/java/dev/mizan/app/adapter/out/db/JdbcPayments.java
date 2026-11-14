@@ -78,13 +78,8 @@ class JdbcPayments implements Payments {
 
   @Override
   public void requestSync(UUID id, Instant now) {
-    // The time to look is now, unless it is earlier already. The flag is not written by a sync's own save.
-    jdbc.sql("""
-        UPDATE payments SET sync_requested = true,
-          next_sync_at = CASE WHEN next_sync_at IS NULL OR next_sync_at > ? THEN ? ELSE next_sync_at END
-        WHERE id = ?
-        """)
-        .param(Sql.time(now)).param(Sql.time(now)).param(id).update();
+    // The flag is not written by a sync's own save.
+    jdbc.sql("UPDATE payments SET sync_requested = true, next_sync_at = ? WHERE id = ?").param(Sql.time(now)).param(id).update();
   }
 
   @Override
@@ -95,8 +90,9 @@ class JdbcPayments implements Payments {
   @Override
   public List<UUID> claimDue(Instant now, Instant leaseEnds, int limit) {
     // SKIP LOCKED: a payment that another worker, or a request, holds right now is left for the next round.
+    // The flag sync_requested stays up: the step takes it down itself, just before its fetch (claim).
     return jdbc.sql("""
-        UPDATE payments SET next_sync_at = ?, sync_requested = false
+        UPDATE payments SET next_sync_at = ?
         WHERE id IN (
           SELECT id FROM payments WHERE next_sync_at <= ? ORDER BY next_sync_at LIMIT ? FOR UPDATE SKIP LOCKED)
         RETURNING id
