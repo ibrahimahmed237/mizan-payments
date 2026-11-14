@@ -1,0 +1,42 @@
+
+== Start Mizan, PostgreSQL and the simulator
+An API key was made with the command line. It is shown once.
+
+== 1. A card that pays at once
+status=CAPTURED captured=15000 card=1111
+
+== 2. A card that needs the bank's code: the customer goes to the bank's page
+status=PENDING pending_reason=customer_action
+The customer approved. The gateway sends them back to Mizan's return page:
+  303 -> http://localhost:3000/orders/demo-1794646472-2?payment_id=64fdb0b1-3542-4156-b2bb-141377cc4699
+status=CAPTURED
+
+== 3. A declined card is a payment that failed, not an error
+status=FAILED failure=INSUFFICIENT FUNDS
+
+== 4. The gateway charges the card and the answer is lost on the way
+status=CAPTURED captured=12000  (Mizan asked the gateway by its own id)
+
+== 5. A hold, captured in part, then a part refund
+status=AUTHORIZED
+capture 15000: SUCCEEDED
+refund 4000:   SUCCEEDED
+refund 20000:  refund_too_large
+
+== 6. The same request twice makes one payment
+same payment both times: 54dfcd52-bd1e-4132-bb8d-397e642e87d1
+
+== 7. The gateway pays out. Its settlement file has a wrong fee on one line
+lines: {'new': 0, 'needs_sync': 0, 'matched': 6, 'suspense': 0, 'accepted': 0}
+discrepancy FEE_MISMATCH: expected fee 546, the file says 553
+
+== 8. The books balance
+  gateway_receivable            0
+  bank                      46895
+  gateway_fees               2105
+  sales                    -49000
+  suspense                      0
+  adjustments                   0
+  balanced: True
+
+== Done. Stop it with: docker compose down -v
