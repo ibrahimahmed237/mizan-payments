@@ -6,9 +6,15 @@ import dev.mizan.app.adapter.out.store.HttpStoreEndpoint;
 import dev.mizan.app.application.RunDueEvents;
 import dev.mizan.app.support.Api.Answer;
 import dev.mizan.app.support.IntegrationTest;
+import dev.mizan.app.support.World;
 import dev.mizan.app.support.StoreReceiver;
 import dev.mizan.app.support.StoreReceiver.Received;
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.time.Duration;
+import java.util.HexFormat;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -22,6 +28,7 @@ class EventSenderIT extends IntegrationTest {
   @AfterEach
   void theStoreAnswersAgain() {
     world.store.status.set(200);
+    world.store.delayMillis.set(0);
   }
 
   private int send() {
@@ -35,6 +42,16 @@ class EventSenderIT extends IntegrationTest {
   /** The id of a payment's only event. */
   private String onlyEvent(String paymentId) {
     return jdbc.sql("SELECT id::text FROM outbox_events WHERE payment_id = ?").param(UUID.fromString(paymentId)).query(String.class).single();
+  }
+
+  private static String hmac(String secret, String text) {
+    try {
+      Mac mac = Mac.getInstance("HmacSHA256");
+      mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+      return HexFormat.of().formatHex(mac.doFinal(text.getBytes(StandardCharsets.UTF_8)));
+    } catch (GeneralSecurityException e) {
+      throw new IllegalStateException(e);
+    }
   }
 
   private String status(String eventId) {
@@ -53,8 +70,10 @@ class EventSenderIT extends IntegrationTest {
     assertThat(requests).hasSize(1);
     Received request = requests.get(0);
     assertThat(request.timestamp()).isEqualTo(Long.toString(now().getEpochSecond()));
+    // Computed here as the store would, not with Mizan's own code: HMAC-SHA256 of "timestamp.body".
+    assertThat(request.signature()).isEqualTo("v1=" + hmac(StoreReceiver.SECRET, now().getEpochSecond() + "." + request.body()));
     assertThat(request.signature()).isEqualTo("v1=" + HttpStoreEndpoint.sign(StoreReceiver.SECRET, now().getEpochSecond(), request.body()));
-    assertThat(request.signature()).isNotEqualTo("v1=" + HttpStoreEndpoint.sign("another-secret", now().getEpochSecond(), request.body()));
+    assertThat(request.signature()).isNotEqualTo("v1=" + hmac("another-secret", now().getEpochSecond() + "." + request.body()));
     JsonNode body = dev.mizan.app.support.Api.JSON.readTree(request.body());
     assertThat(body.path("id").asString()).isEqualTo(event);
     assertThat(body.path("type").asString()).isEqualTo("payment.captured");
@@ -105,6 +124,22 @@ class EventSenderIT extends IntegrationTest {
   }
 
   @Test
+  void a_store_slower_than_the_time_limit_has_not_answered_and_gets_the_event_again() {
+    String event = onlyEvent(captured(newOrder(), 15_000));
+    world.store.delayMillis.set((int) World.GATEWAY_TIMEOUT.toMillis() * 3);
+
+    send();
+
+    assertThat(status(event)).isEqualTo("WAITING 1");
+    assertThat(jdbc.sql("SELECT last_error FROM outbox_events WHERE id = ?").param(UUID.fromString(event)).query(String.class).single())
+        .startsWith("no_answer");
+    world.store.delayMillis.set(0);
+    advance(Duration.ofMinutes(1));
+    send();
+    assertThat(status(event)).isEqualTo("DELIVERED 2"); // the store must ignore the first copy if it got it after all
+  }
+
+  @Test
   void finance_sees_the_events_and_sends_one_again() {
     String id = captured(newOrder(), 15_000);
     String event = onlyEvent(id);
@@ -123,6 +158,7 @@ class EventSenderIT extends IntegrationTest {
     assertThat(twice.status()).isEqualTo(409);
     assertThat(twice.code()).isEqualTo("already_waiting");
     assertThat(world.store.of(event)).hasSize(2); // the same event, with the same id: the store can drop a repeat
+    assertThat(status(event)).isEqualTo("DELIVERED 1"); // counted from zero again: a redelivered event gets all its tries
     assertThat(finance.get("/v1/events?status=DELIVERED&payment_id=" + id).json().path("data")).hasSize(1);
     assertThat(finance.get("/v1/events?status=LOST").code()).isEqualTo("invalid_status");
     assertThat(finance.post("/v1/events/" + UUID.randomUUID() + "/redeliver", null).status()).isEqualTo(404);

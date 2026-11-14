@@ -24,8 +24,11 @@ public class RunDueEvents {
   public static final List<Duration> RETRIES = List.of(
       Duration.ofMinutes(1), Duration.ofMinutes(5), Duration.ofMinutes(30), Duration.ofHours(2), Duration.ofHours(6), Duration.ofHours(24));
 
-  /** Longer than a call to the store can take, so a taken event is not sent twice at once. */
-  public static final Duration LEASE = Duration.ofSeconds(60);
+  /**
+   * Longer than a whole round can take (50 events, each call cut off after {@code mizan.http.timeout}, 10 seconds), so another instance does not
+   * send a taken event at the same time. If this instance dies, its events are sent again when the lease ends.
+   */
+  public static final Duration LEASE = Duration.ofMinutes(10);
 
   private final Outbox outbox;
   private final StoreEndpoint store;

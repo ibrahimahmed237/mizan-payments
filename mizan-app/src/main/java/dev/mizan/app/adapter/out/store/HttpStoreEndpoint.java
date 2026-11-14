@@ -22,16 +22,20 @@ import javax.crypto.spec.SecretKeySpec;
  */
 public final class HttpStoreEndpoint implements StoreEndpoint {
 
-  private static final Duration TIMEOUT = Duration.ofSeconds(10);
-
   private final URI address;
   private final String secret;
-  private final HttpClient client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(2)).build();
+  private final Duration timeout;
+  private final HttpClient client;
 
-  /** @param address the store's address for events; null or empty when none is set */
-  public HttpStoreEndpoint(String address, String secret) {
+  /**
+   * @param address the store's address for events; null or empty when none is set
+   * @param timeout a call that has not answered by then is a failed try
+   */
+  public HttpStoreEndpoint(String address, String secret, Duration connectTimeout, Duration timeout) {
     this.address = address == null || address.isBlank() ? null : URI.create(address);
     this.secret = secret;
+    this.timeout = timeout;
+    this.client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(connectTimeout).build();
   }
 
   @Override
@@ -42,7 +46,7 @@ public final class HttpStoreEndpoint implements StoreEndpoint {
   @Override
   public Delivery send(UUID eventId, long timestamp, String body) {
     var request = HttpRequest.newBuilder(address)
-        .timeout(TIMEOUT)
+        .timeout(timeout)
         .header("Content-Type", "application/json")
         .header("Mizan-Event-Id", eventId.toString())
         .header("Mizan-Timestamp", Long.toString(timestamp))

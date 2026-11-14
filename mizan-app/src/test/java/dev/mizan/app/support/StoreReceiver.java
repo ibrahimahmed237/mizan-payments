@@ -7,6 +7,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /** Plays the store's backend: it receives Mizan's events, keeps them, and answers as a test tells it to. */
@@ -20,6 +21,8 @@ public final class StoreReceiver {
   public final List<Received> received = new CopyOnWriteArrayList<>();
   /** The answer to every request; 200 unless a test changes it. */
   public final AtomicInteger status = new AtomicInteger(200);
+  /** How long the store takes to answer, in real milliseconds; 0 unless a test changes it. */
+  public final AtomicInteger delayMillis = new AtomicInteger();
   private final HttpServer server;
 
   StoreReceiver() {
@@ -34,9 +37,13 @@ public final class StoreReceiver {
         received.add(new Received(
             headers.getFirst("Mizan-Event-Id"), headers.getFirst("Mizan-Timestamp"), headers.getFirst("Mizan-Signature"),
             new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)));
+        Thread.sleep(delayMillis.get());
         exchange.sendResponseHeaders(status.get(), -1);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
       }
     });
+    server.setExecutor(Executors.newCachedThreadPool()); // a slow answer does not hold up the next request
     server.start();
   }
 

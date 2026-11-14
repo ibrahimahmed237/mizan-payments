@@ -65,7 +65,8 @@ class Beans {
 
   @Bean
   StoreEndpoint storeEndpoint(MizanProperties properties) {
-    return new HttpStoreEndpoint(properties.store().eventUrl(), properties.store().eventSecret());
+    return new HttpStoreEndpoint(
+        properties.store().eventUrl(), properties.store().eventSecret(), properties.http().connectTimeout(), properties.http().timeout());
   }
 
   @Bean
