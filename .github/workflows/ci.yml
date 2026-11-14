@@ -26,6 +26,14 @@ jobs:
       - name: Build
         run: ./mvnw -B -ntp verify
 
+      - name: Keep the proof run's report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-report
+          path: mizan-app/target/proof/report.md
+          if-no-files-found: ignore
+
       - name: Keep test reports
         if: failure()
         uses: actions/upload-artifact@v4
