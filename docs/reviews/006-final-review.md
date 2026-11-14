@@ -75,7 +75,13 @@ Each run compares every payment's captured and refunded totals with the simulato
 
 ## History
 
-Every commit builds and passes its tests. Commits follow Conventional Commits, in the order the work was done. No secret, real key or real card number is in the history; the simulator's test keys are named as such.
+Every commit of this round was built from a fresh clone, with every test. That found one more problem:
+
+| Finding | Fix |
+|---|---|
+| Two simulator tests of webhook retries failed in 5 of 16 builds. The simulator set a failed webhook's next try from the time its answer came back. A test that moves the clock could move it in between, and the next try was then set from the moved clock and never came | The wait counts from the start of the try, as a real gateway's schedule does. 12 runs in a row passed, and every later build |
+
+So the commits before that fix build, and pass their tests except for that race. Commits follow Conventional Commits, in the order the work was done. No secret, real key or real card number is in the history: the simulator's test keys are named as such, and the card numbers are test numbers.
 
 ## Result
 
