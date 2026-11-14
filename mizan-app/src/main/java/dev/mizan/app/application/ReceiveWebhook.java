@@ -33,6 +33,16 @@ public class ReceiveWebhook {
    */
   public record Event(Gateway gateway, String eventId, String type, String gatewayPaymentId, UUID mizanPaymentId) {}
 
+  /** What came of a webhook. */
+  public enum Outcome {
+    /** About a payment of Mizan's: a look is asked for. */
+    ACCEPTED,
+    /** The same event again. Nothing more happens. */
+    REPEATED,
+    /** About a payment Mizan does not have. */
+    UNMATCHED
+  }
+
   /** Why a webhook about a payment that Mizan does not have is worth a person's look. */
   public static final String UNKNOWN_PAYMENT_EVENT = "UNKNOWN_PAYMENT_EVENT";
 
@@ -53,22 +63,23 @@ public class ReceiveWebhook {
     this.clock = clock;
   }
 
-  public void handle(Event event) {
-    transactions.run(() -> {
+  public Outcome handle(Event event) {
+    return transactions.run(() -> {
       Instant now = clock.instant();
       Optional<PaymentRecord> payment = find(event);
       UUID paymentId = payment.map(PaymentRecord::id).orElse(null);
       if (!events.save(event.gateway(), event.eventId(), event.type(), event.gatewayPaymentId(), paymentId, now)) {
-        return; // the same event again: it was acted on the first time
+        return Outcome.REPEATED; // the same event again: it was acted on the first time
       }
       if (paymentId != null) {
         payments.requestSync(paymentId, now);
-        return;
+        return Outcome.ACCEPTED;
       }
       // Someone took a payment at the gateway outside Mizan. One discrepancy per such payment, however many events come.
       discrepancies.openForGatewayPayment(UNKNOWN_PAYMENT_EVENT, event.gateway(), event.gatewayPaymentId(), now)
           .ifPresent(opened -> outbox.add(
               EventType.DISCREPANCY_OPENED, null, EventData.discrepancy(opened, UNKNOWN_PAYMENT_EVENT, null), now));
+      return Outcome.UNMATCHED;
     });
   }
 

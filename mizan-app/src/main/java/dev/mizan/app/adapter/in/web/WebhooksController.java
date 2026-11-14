@@ -2,8 +2,10 @@ package dev.mizan.app.adapter.in.web;
 
 import dev.mizan.app.application.Problem;
 import dev.mizan.app.application.ReceiveWebhook;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
+import java.util.Locale;
 import java.util.Map;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,10 +24,12 @@ class WebhooksController {
 
   private final WebhookReader reader;
   private final ReceiveWebhook receive;
+  private final MeterRegistry meters;
 
-  WebhooksController(WebhookReader reader, ReceiveWebhook receive) {
+  WebhooksController(WebhookReader reader, ReceiveWebhook receive, MeterRegistry meters) {
     this.reader = reader;
     this.receive = receive;
+    this.meters = meters;
   }
 
   @PostMapping("/v1/webhooks/{gateway}")
@@ -37,11 +41,22 @@ class WebhooksController {
     if (body.length > MAX_BODY) {
       throw new Problem(Problem.Kind.TOO_LARGE, "body_too_large", "A webhook is at most 64 KB.");
     }
-    receive.handle(switch (gateway) {
-      case "card" -> reader.card(body);
-      case "pay-later" -> reader.payLater(body, signature);
-      default -> throw Problem.notFound("gateway");
-    });
+    ReceiveWebhook.Event event;
+    try {
+      event = switch (gateway) {
+        case "card" -> reader.card(body);
+        case "pay-later" -> reader.payLater(body, signature);
+        default -> throw Problem.notFound("gateway");
+      };
+    } catch (Problem refused) {
+      count(gateway, refused.code()); // many "unauthorized": a wrong secret, or someone trying
+      throw refused;
+    }
+    count(gateway, receive.handle(event).name().toLowerCase(Locale.ROOT));
     return Map.of("received", true);
+  }
+
+  private void count(String gateway, String result) {
+    meters.counter("mizan.webhooks", "gateway", gateway, "result", result).increment();
   }
 }

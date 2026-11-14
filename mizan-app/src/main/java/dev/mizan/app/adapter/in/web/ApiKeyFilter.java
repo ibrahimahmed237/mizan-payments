@@ -23,6 +23,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 class ApiKeyFilter extends OncePerRequestFilter {
 
   private static final String BEARER = "Bearer ";
+  /** The request attribute that names the caller once its key was checked. The limits count per caller. */
+  static final String CALLER = "mizan.caller";
 
   private final ApiKeyService keys;
   private final Problems problems;
@@ -55,6 +57,7 @@ class ApiKeyFilter extends OncePerRequestFilter {
       problems.write(response, HttpStatus.FORBIDDEN, "forbidden", "This API key does not have the scope '" + scope + "'.", request);
       return;
     }
+    request.setAttribute(CALLER, caller.get().id().toString());
     chain.doFilter(request, response);
   }
 

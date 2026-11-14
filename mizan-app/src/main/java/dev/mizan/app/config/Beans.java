@@ -1,11 +1,16 @@
 package dev.mizan.app.config;
 
+import dev.mizan.app.adapter.in.web.LimitsFilter;
+import dev.mizan.app.adapter.in.web.Problems;
 import dev.mizan.app.adapter.in.web.WebhookReader;
 import dev.mizan.app.adapter.out.gateway.HttpGateways;
+import dev.mizan.app.adapter.out.store.HttpStoreEndpoint;
 import dev.mizan.app.application.Settings;
 import dev.mizan.app.application.port.Gateways;
+import dev.mizan.app.application.port.StoreEndpoint;
 import dev.mizan.core.fees.FeeRule;
 import dev.mizan.core.payment.Gateway;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
 import java.time.InstantSource;
 import java.time.temporal.ChronoUnit;
@@ -49,12 +54,28 @@ class Beans {
   }
 
   @Bean
-  Gateways gateways(MizanProperties properties) {
+  Gateways gateways(MizanProperties properties, MeterRegistry meters) {
     return new HttpGateways(
         new HttpGateways.Access(properties.cardGateway().url(), properties.cardGateway().key()),
         new HttpGateways.Access(properties.payLater().url(), properties.payLater().key()),
         properties.http().connectTimeout(),
-        properties.http().timeout());
+        properties.http().timeout(),
+        meters);
+  }
+
+  @Bean
+  StoreEndpoint storeEndpoint(MizanProperties properties) {
+    return new HttpStoreEndpoint(properties.store().eventUrl(), properties.store().eventSecret());
+  }
+
+  @Bean
+  LimitsFilter limitsFilter(MizanProperties properties, Problems problems) {
+    var limits = properties.limits();
+    return new LimitsFilter(
+        new LimitsFilter.Limit(limits.apiPerSecond(), limits.apiBurst()),
+        new LimitsFilter.Limit(limits.webhooksPerSecond(), limits.webhooksBurst()),
+        new LimitsFilter.Limit(limits.returnsPerSecond(), limits.returnsBurst()),
+        problems);
   }
 
   @Bean

@@ -23,7 +23,9 @@ public record MizanProperties(
     @DefaultValue GatewayProperties payLater,
     @DefaultValue HttpProperties http,
     @DefaultValue SettlementProperties settlement,
-    @DefaultValue FeesProperties fees) {
+    @DefaultValue FeesProperties fees,
+    @DefaultValue StoreProperties store,
+    @DefaultValue LimitsProperties limits) {
 
   /**
    * @param maxAmount the largest payment, in halalas
@@ -72,6 +74,23 @@ public record MizanProperties(
     }
   }
 
+  /**
+   * Where events for the store go.
+   *
+   * @param eventUrl the store's address; empty: events are kept and not sent
+   * @param eventSecret the secret that signs each event; needed when there is an address
+   */
+  public record StoreProperties(String eventUrl, String eventSecret) {}
+
+  /** Requests per second, per instance of Mizan. A caller may use a burst at once. */
+  public record LimitsProperties(
+      @DefaultValue("100") double apiPerSecond,
+      @DefaultValue("200") int apiBurst,
+      @DefaultValue("200") double webhooksPerSecond,
+      @DefaultValue("400") int webhooksBurst,
+      @DefaultValue("20") double returnsPerSecond,
+      @DefaultValue("40") int returnsBurst) {}
+
   /** Stops the start when a needed setting is missing, and says which. */
   public MizanProperties {
     List<String> missing = new ArrayList<>();
@@ -82,6 +101,9 @@ public record MizanProperties(
     require(missing, "MIZAN_PAY_LATER_URL", payLater.url());
     require(missing, "MIZAN_PAY_LATER_KEY", payLater.key());
     require(missing, "MIZAN_PAY_LATER_WEBHOOK_SECRET", payLater.webhookSecret());
+    if (store.eventUrl() != null && !store.eventUrl().isBlank()) {
+      require(missing, "MIZAN_STORE_EVENT_SECRET", store.eventSecret());
+    }
     if (returnUrlPrefixes.isEmpty()) {
       missing.add("MIZAN_RETURN_URL_PREFIXES");
     }

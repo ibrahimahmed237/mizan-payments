@@ -14,7 +14,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /** Every error has one shape: {@code application/problem+json} with a code a program can read. */
 @Component
-class Problems {
+public class Problems {
 
   private final JsonMapper json;
 

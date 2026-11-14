@@ -1,0 +1,474 @@
+openapi: 3.1.0
+info:
+  title: Mizan
+  version: 0.1.0
+  description: |
+    The payments service of one online store. Amounts are whole halalas (100 halalas = 1 riyal).
+    Every error is application/problem+json with a stable `code`. See docs/lld/api.md for the rules behind each answer.
+servers:
+  - url: http://localhost:8080
+security:
+  - apiKey: []
+tags:
+  - name: payments
+    description: For the store's systems. Needs the scope `payments`.
+  - name: backoffice
+    description: For finance. Needs the scope `backoffice`.
+  - name: outside
+    description: Called by gateways and browsers. No API key.
+
+paths:
+  /v1/payments:
+    post:
+      tags: [payments]
+      summary: Create a payment
+      description: A declined card is a 201 with status FAILED, not an error. Without an answer from the gateway, the payment is PENDING with pending_reason gateway_unknown.
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreatePayment' } } }
+      responses:
+        '201': { description: Made, content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }
+        '200': { $ref: '#/components/responses/PaymentReplay' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+    get:
+      tags: [payments]
+      summary: List payments, newest first
+      parameters:
+        - { name: reference, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/PaymentStatus' } }
+        - { name: cursor, in: query, schema: { type: string }, description: The next_cursor of the page before }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: One page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Payment' } }
+                  next_cursor: { type: [string, 'null'] }
+
+  /v1/payments/{id}:
+    get:
+      tags: [payments]
+      summary: Read a payment with its operations
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: The payment
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Payment' }
+                  - type: object
+                    properties:
+                      operations: { type: array, items: { $ref: '#/components/schemas/Operation' } }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /v1/payments/{id}/capture:
+    post:
+      tags: [payments]
+      summary: Capture a hold
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/OperationRequest' } } } }
+      responses: &operation-responses
+        '201': { description: Done or refused by the gateway, content: { application/json: { schema: { $ref: '#/components/schemas/Operation' } } } }
+        '202': { description: Sent; the result is not known yet, content: { application/json: { schema: { $ref: '#/components/schemas/Operation' } } } }
+        '200': { description: A repeat. Header Idempotent-Replay is true, content: { application/json: { schema: { $ref: '#/components/schemas/Operation' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+
+  /v1/payments/{id}/cancel:
+    post:
+      tags: [payments]
+      summary: Cancel a hold, or a payment that waits for the customer
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      responses: *operation-responses  # the same answers as a capture
+
+  /v1/payments/{id}/refunds:
+    post:
+      tags: [payments]
+      summary: Refund
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/OperationRequest' } } } }
+      responses: *operation-responses  # the same answers as a capture
+    get:
+      tags: [payments]
+      summary: A payment's refunds, oldest first
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { description: The refunds, content: { application/json: { schema: { $ref: '#/components/schemas/OperationList' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /v1/payments/{id}/sync:
+    post:
+      tags: [payments]
+      summary: Look at the gateway now and do what is due
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { description: The payment after the look, content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /v1/webhooks/{gateway}:
+    post:
+      tags: [outside]
+      summary: A webhook from a gateway
+      description: Checked by the gateway's own secret (card) or signature header (pay later). Only asks for a look; the status in a webhook is never used.
+      security: []
+      parameters:
+        - { name: gateway, in: path, required: true, schema: { type: string, enum: [card, pay-later] } }
+        - { name: X-Signature, in: header, schema: { type: string }, description: Pay later only. Hex HMAC-SHA256 of the body }
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        '200': { description: Received. Also for a repeat and for a payment Mizan does not have }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+
+  /v1/return/{id}:
+    get:
+      tags: [outside]
+      summary: The customer comes back from the bank's or the provider's page
+      security: []
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '303': { description: To the payment's return_url, with payment_id added }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /v1/settlements:
+    post:
+      tags: [backoffice]
+      summary: Upload a settlement file
+      description: The body is the file itself, in Mizan's neutral format. Checked as a whole; matching is done by the matching worker.
+      requestBody: { required: true, content: { text/csv: { schema: { type: string } } } }
+      responses:
+        '201': { description: Imported, content: { application/json: { schema: { $ref: '#/components/schemas/SettlementFile' } } } }
+        '200': { description: The same file again. Header Idempotent-Replay is true, content: { application/json: { schema: { $ref: '#/components/schemas/SettlementFile' } } } }
+        '409': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+    get:
+      tags: [backoffice]
+      summary: Settlement files, newest first
+      responses:
+        '200':
+          description: The files
+          content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/SettlementFile' } } } } } }
+
+  /v1/settlements/{id}:
+    get:
+      tags: [backoffice]
+      summary: A settlement file and how far its matching has come
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { description: The file, content: { application/json: { schema: { $ref: '#/components/schemas/SettlementFile' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /v1/discrepancies:
+    get:
+      tags: [backoffice]
+      summary: Discrepancies, newest first
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [OPEN, RESOLVED] } }
+        - { name: type, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The discrepancies
+          content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/Discrepancy' } } } } } }
+
+  /v1/discrepancies/{id}:
+    get:
+      tags: [backoffice]
+      summary: One discrepancy
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { description: The discrepancy, content: { application/json: { schema: { $ref: '#/components/schemas/Discrepancy' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /v1/discrepancies/{id}/retry:
+    post:
+      tags: [backoffice]
+      summary: Sync the line's payment and match the line again
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { description: Resolved as REMATCHED, content: { application/json: { schema: { $ref: '#/components/schemas/Discrepancy' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /v1/discrepancies/{id}/accept:
+    post:
+      tags: [backoffice]
+      summary: Accept the difference; money in suspense moves to adjustments
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [note], properties: { note: { type: string, minLength: 1, maxLength: 500 } } } } }
+      responses:
+        '200': { description: Resolved as ACCEPTED, content: { application/json: { schema: { $ref: '#/components/schemas/Discrepancy' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+
+  /v1/ledger/balances:
+    get:
+      tags: [backoffice]
+      summary: Each account's balance, and whether the books balance
+      responses:
+        '200': { description: The balances, content: { application/json: { schema: { $ref: '#/components/schemas/Balances' } } } }
+
+  /v1/ledger/entries:
+    get:
+      tags: [backoffice]
+      summary: A payment's ledger entries, oldest first
+      parameters: [{ name: payment_id, in: query, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200':
+          description: The entries
+          content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/Entry' } } } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /v1/reports/reconciliation:
+    get:
+      tags: [backoffice]
+      summary: Unsettled money by age, suspense, open discrepancies by type
+      responses:
+        '200': { description: The report, content: { application/json: { schema: { $ref: '#/components/schemas/Reconciliation' } } } }
+
+  /v1/events:
+    get:
+      tags: [backoffice]
+      summary: Events for the store, newest first
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [WAITING, DELIVERED, FAILED, SKIPPED] } }
+        - { name: payment_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The events
+          content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/Event' } } } } } }
+
+  /v1/events/{id}/redeliver:
+    post:
+      tags: [backoffice]
+      summary: Send an event again, from the first retry time on
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { description: Waiting to be sent, content: { application/json: { schema: { $ref: '#/components/schemas/Event' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /v3/api-docs:
+    get:
+      tags: [outside]
+      summary: This description
+      security: []
+      responses:
+        '200': { description: OpenAPI 3.1, as YAML }
+
+components:
+  securitySchemes:
+    apiKey: { type: http, scheme: bearer, description: 'Authorization: Bearer <key>. Keys are made with the command `keys create`.' }
+
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 1 to 128 printable characters. The same key and body again returns what the first request made, as it is now.
+      schema: { type: string, minLength: 1, maxLength: 128 }
+
+  responses:
+    Problem:
+      description: An error
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
+    PaymentReplay:
+      description: A repeat of an earlier request. Header Idempotent-Replay is true
+      content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } }
+
+  schemas:
+    PaymentStatus: { type: string, enum: [PENDING, AUTHORIZED, CAPTURED, FAILED, CANCELED, EXPIRED] }
+
+    CreatePayment:
+      type: object
+      additionalProperties: false
+      required: [amount, currency, reference, method]
+      properties:
+        amount: { type: integer, minimum: 100, maximum: 10000000, description: Halalas }
+        currency: { type: string, enum: [SAR] }
+        reference: { type: string, pattern: '^[A-Za-z0-9._-]{1,64}$', description: The store's order }
+        method: { type: string, enum: [CARD, APPLE_PAY, PAY_LATER] }
+        source:
+          type: object
+          additionalProperties: false
+          properties: { token: { type: string, maxLength: 255, description: Needed for CARD and APPLE_PAY. Never stored } }
+        capture: { type: string, enum: [AUTO, MANUAL], default: AUTO }
+        return_url: { type: string, description: Needed for CARD and PAY_LATER. Must start with a configured address }
+        description: { type: string, maxLength: 255 }
+
+    Payment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/PaymentStatus' }
+        amount: { type: integer }
+        currency: { type: string }
+        reference: { type: string }
+        method: { type: string }
+        capture: { type: string }
+        captured_amount: { type: integer }
+        refunded_amount: { type: integer }
+        next_action:
+          type: [object, 'null']
+          properties: { type: { type: string, enum: [redirect] }, url: { type: string } }
+        pending_reason: { type: [string, 'null'], enum: [customer_action, gateway_unknown, null] }
+        failure:
+          type: [object, 'null']
+          properties: { code: { type: string }, message: { type: [string, 'null'] } }
+        card:
+          type: [object, 'null']
+          properties: { scheme: { type: string }, last4: { type: string } }
+        late: { type: boolean, description: The money was taken after the store was told the payment had ended }
+        description: { type: [string, 'null'] }
+        version: { type: integer, description: Grows with every change. Lets the store drop an older event }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    OperationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        amount: { type: integer, description: 'Default: the whole hold, or all that can still be refunded' }
+        reason: { type: string, maxLength: 255 }
+
+    Operation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        payment_id: { type: string, format: uuid }
+        type: { type: string, enum: [CREATE, CAPTURE, CANCEL, REFUND] }
+        status: { type: string, enum: [PENDING, SUCCEEDED, FAILED] }
+        amount: { type: integer }
+        reason: { type: [string, 'null'] }
+        origin: { type: string, enum: [API, SYSTEM, GATEWAY] }
+        failure:
+          type: [object, 'null']
+          properties: { code: { type: string } }
+        created_at: { type: string, format: date-time }
+        finished_at: { type: [string, 'null'], format: date-time }
+
+    OperationList:
+      type: object
+      properties: { data: { type: array, items: { $ref: '#/components/schemas/Operation' } } }
+
+    SettlementFile:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        gateway: { type: string, enum: [CARD_GATEWAY, PAY_LATER] }
+        payout_id: { type: string }
+        payout_date: { type: string, format: date }
+        total_net: { type: integer }
+        line_count: { type: integer }
+        lines:
+          type: object
+          properties:
+            new: { type: integer }
+            needs_sync: { type: integer }
+            matched: { type: integer }
+            suspense: { type: integer }
+            accepted: { type: integer }
+        complete: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    Discrepancy:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        status: { type: string, enum: [OPEN, RESOLVED] }
+        payment_id: { type: [string, 'null'], format: uuid }
+        line_id: { type: [string, 'null'], format: uuid }
+        gateway: { type: [string, 'null'] }
+        gateway_payment_id: { type: [string, 'null'] }
+        expected: { type: [integer, 'null'] }
+        actual: { type: [integer, 'null'] }
+        suspense_amount: { type: integer }
+        resolution: { type: [string, 'null'], enum: [REMATCHED, SETTLED_LATER, ACCEPTED, null] }
+        note: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+        resolved_at: { type: [string, 'null'], format: date-time }
+
+    Balances:
+      type: object
+      properties:
+        accounts:
+          type: array
+          items:
+            type: object
+            properties:
+              account: { type: string }
+              debits: { type: integer }
+              credits: { type: integer }
+              balance: { type: integer, description: Debits minus credits }
+        total_debits: { type: integer }
+        total_credits: { type: integer }
+        balanced: { type: boolean }
+
+    Entry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string }
+        key: { type: string }
+        payment_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        postings:
+          type: array
+          items:
+            type: object
+            properties:
+              account: { type: string }
+              side: { type: string, enum: [DEBIT, CREDIT] }
+              amount: { type: integer }
+
+    Reconciliation:
+      type: object
+      properties:
+        unsettled:
+          type: object
+          properties: { up_to_3_days: { type: integer }, 3_to_7_days: { type: integer }, over_7_days: { type: integer } }
+        suspense: { type: integer }
+        open_discrepancies:
+          type: array
+          items:
+            type: object
+            properties: { type: { type: string }, count: { type: integer }, suspense_amount: { type: integer } }
+
+    Event:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        payment_id: { type: [string, 'null'], format: uuid }
+        status: { type: string, enum: [WAITING, DELIVERED, FAILED, SKIPPED] }
+        attempts: { type: integer }
+        next_attempt_at: { type: [string, 'null'], format: date-time }
+        last_error: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+        delivered_at: { type: [string, 'null'], format: date-time }
+
+    Problem:
+      type: object
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string }
+        request_id: { type: string }

@@ -51,6 +51,8 @@ public final class World {
   public final MutableClock clock = new MutableClock(START);
   public final Simulator simulator = new Simulator(clock, Simulator.Config.defaults().withHang(Duration.ofMillis(900)));
   public final SimulatorServer simulatorServer = SimulatorServer.start(simulator, 0);
+  /** The store's backend, where Mizan sends its events. */
+  public final StoreReceiver store = new StoreReceiver();
   public final ConfigurableApplicationContext app;
   public final String baseUrl;
   public final JdbcClient jdbc;
@@ -128,6 +130,8 @@ public final class World {
         Map.entry("mizan.pay-later.key", simulator.config().payLaterKey()),
         Map.entry("mizan.pay-later.webhook-secret", simulator.config().payLaterWebhookSecret()),
         Map.entry("mizan.http.timeout", GATEWAY_TIMEOUT.toMillis() + "ms"),
+        Map.entry("mizan.store.event-url", store.url()),
+        Map.entry("mizan.store.event-secret", StoreReceiver.SECRET),
         Map.entry("mizan.workers.enabled", "false"));
 
     app = start(settings);
