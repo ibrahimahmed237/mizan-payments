@@ -10,7 +10,7 @@ Three workers run inside the service: the **sync worker**, the **matching worker
 |---|---|
 | 1. Size | A body over 64 KB is refused with `413` |
 | 2. Check | The gateway's secret or signature. Wrong: `401`, nothing is saved |
-| 3. Read | Only the event id, the event type and the gateway's payment id. Missing: `400` |
+| 3. Read | Only the event id, the event type and the gateway's payment id. Missing: `400`. A gateway that sends no event id (pay later) gets one made from a hash of the body, so the same webhook sent twice is still one event |
 | 4. Save | One transaction: insert the event (the event id is unique per gateway); set the payment's `nextSyncAt = now` |
 | 5. Answer | `200`, also for a repeated event and for an unknown payment |
 

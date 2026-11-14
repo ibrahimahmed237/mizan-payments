@@ -4,7 +4,7 @@ Reconciliation answers one question: **did the gateway pay the store what Mizan 
 
 ## The settlement file
 
-The gateway pays out once a day and gives a file for that payout. Mizan reads one neutral format; each gateway has a small parser that turns its file into it.
+The gateway pays out once a day and gives a file for that payout. Mizan reads one neutral format. A real gateway's file is turned into it by a small converter, written when a real file is at hand (assumption A5). The simulator writes the neutral format directly.
 
 ```
 H,payout_id,gateway,currency,payout_date,total_net,line_count

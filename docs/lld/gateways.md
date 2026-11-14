@@ -105,34 +105,67 @@ Test cards decide the normal result, as in real test modes:
 
 ## Faults
 
-A fault is asked for per payment, in the payment's metadata (`sim_fault`), or for everything through the control API. The proof run plans faults from a seed, so a run can be repeated exactly.
+A fault is planned for one **order** (the store's `reference`), through the control API or, in a test, through the simulator's own methods. The proof run plans faults from a seed, so a run can be repeated exactly.
+
+**Faults of one call.** The next call of that kind for the order (create, fetch, capture, void or refund) fails in this way, once.
 
 | Fault | What the simulator does | Rule it attacks |
 |---|---|---|
-| `lost_answer` | Does the work, then drops the connection | R3: charged, and Mizan did not hear |
-| `timeout_before` | Waits past the timeout and does nothing | Becomes `FAILED` after the quiet minute, not before; nothing is sent twice |
-| `slow_apply` | Answers with a timeout, does the work a few seconds later | The quiet minute: a slow success is not called a failure |
-| `very_slow_apply` | Does the work after the quiet minute | A refund reported as failed is still found and counted; a payment becomes a late capture |
-| `error_500` | Answers 500 without doing the work | Unknown is not a refusal |
-| `error_500_after` | Does the work, answers 500 | Unknown is not a refusal, and not a failure |
-| `garbage` | Answers 200 with a body that is not the record | An unreadable answer is `Unknown` |
-| `fetch_down` | `fetch` fails for a while | The worker keeps trying |
-| `webhook_drop` | Sends no webhook | R2: a webhook is not needed |
-| `webhook_dup` | Sends each webhook three times | The inbox |
-| `webhook_late` | Sends the webhook minutes later | Late hints are harmless |
-| `webhook_reorder` | Sends `paid` before `authorized`, `refunded` before `paid` | Order does not matter |
-| `webhook_forged` | Sends a webhook with a wrong secret, and one that says "paid" for an unpaid payment | A webhook cannot move money |
-| `webhook_early` | Sends the webhook before answering the call | The payment row exists before the call |
-| `customer_late` | The customer approves after Mizan has expired the payment | Late capture |
-| `customer_leaves` | The customer never comes back | Expiry |
-| `two_tabs` | The customer pays two payments of one order | One order, one payment that counts |
-| `amount_changed` | The record shows another amount | `AMOUNT_CONFLICT` |
-| `external_refund` | A refund is made directly in the simulator, not through Mizan | External refunds |
-| `hold_released` | The record stays `authorized` although the hold is gone; a capture is refused | Assumption A4 |
+| `LOST_ANSWER` | Does the work, then drops the connection | R3: charged, and Mizan did not hear |
+| `TIMEOUT_BEFORE` | Waits past the timeout and does nothing | Becomes `FAILED` after the quiet minute, not before; nothing is sent twice |
+| `SLOW_APPLY` | Lets the caller time out, does the work a few seconds later | The quiet minute: a slow success is not called a failure |
+| `VERY_SLOW_APPLY` | Does the work two minutes later: after the quiet minute | A refund reported as failed is still found and counted; a payment becomes a late capture |
+| `ERROR_500` | Answers 500 without doing the work | Unknown is not a refusal |
+| `ERROR_500_AFTER` | Does the work, answers 500 | Unknown is not a refusal, and not a failure |
+| `GARBAGE` | Does the work, answers 200 with a body that is not the record | An unreadable answer is `Unknown` |
+
+**Faults that stay.** Every payment of the order has the fault from then on.
+
+| Fault | What the simulator does | Rule it attacks |
+|---|---|---|
+| `WEBHOOK_DROP` | Sends no webhook | R2: a webhook is not needed |
+| `WEBHOOK_DUP` | Sends each webhook three times | The inbox |
+| `WEBHOOK_LATE` | Sends the webhook five minutes later | Late hints are harmless |
+| `WEBHOOK_REORDER` | Later events arrive before earlier ones | Order does not matter |
+| `WEBHOOK_FORGED` | Also sends a webhook with a wrong secret, and one with the right secret that says "paid" for an unpaid payment | A webhook cannot move money |
+| `WEBHOOK_EARLY` | Sends the webhook before answering the call | The payment row exists before the call |
+| `AMOUNT_CHANGED` | A fetch shows another amount | `AMOUNT_CONFLICT` |
+| `HOLD_RELEASED` | The record stays `authorized` although the hold is gone; a capture is refused | Assumption A4 |
+
+**Things that happen outside Mizan.** These are not faults of the simulator. A test makes them happen.
+
+| What happens | How | Rule it attacks |
+|---|---|---|
+| The gateway cannot be asked for a while | The next *n* fetches of the order answer 503 | The worker keeps trying |
+| The customer approves late | The customer approves after Mizan has expired the payment | Late capture |
+| The customer leaves | The customer never comes back; a pay-later session expires | Expiry |
+| Two tabs | The customer pays two payments of one order | One order, one payment that counts |
+| A refund in the gateway's dashboard | A refund is made directly in the simulator, not through Mizan | External refunds |
 
 Settlement faults are in [reconciliation](reconciliation.md#settlement-faults).
 
-The control API (`/_sim/...`) sets faults, moves the simulator's clock, makes a customer act, and returns the book. It has no authentication: the simulator is a test tool and must never be on a public address.
+### The control API
+
+| Call | Does |
+|---|---|
+| `POST /_sim/fault` | Plans a fault: `{reference, fault}`, and `call` for a fault of one call |
+| `POST /_sim/file-fault` | Breaks the next settlement file: `{fault, reference}` |
+| `POST /_sim/customer` | The customer acts: `{id, action}` with `approve`, `decline` or `leave` |
+| `POST /_sim/external-refund` | A refund outside Mizan: `{id, amount}` |
+| `POST /_sim/webhook-target` | Where a gateway's webhooks go: `{gateway, url}` |
+| `POST /_sim/clock` | Moves the simulator's clock forward: `{advance_seconds}`. Only when it was started with a clock that can be moved |
+
+The control API has no authentication: the simulator is a test tool and must never be on a public address. The simulator's book is read by tests that run it in the same process.
+
+### What the simulator shows about real gateways
+
+| Fact | Where it matters |
+|---|---|
+| The card gateway takes Mizan's payment id and the order's `reference` as metadata | A payment found in the gateway's dashboard can be tied to its order |
+| A card webhook has an event id. A pay-later webhook has none | Mizan makes the pay-later event's id from a hash of its body ([workers](workers.md#a-webhook-comes-in)) |
+| Card amounts are whole halalas. Pay-later amounts are riyals as text, such as `"150.00"` | The adapters convert, exactly |
+| A payment voided after capture is shown as `voided` with its captured amount | The adapter reads it as paid and fully refunded |
+| The settlement file is written in Mizan's neutral format | A real gateway's file needs a small converter first (assumption A5) |
 
 ## The real gateway
 
