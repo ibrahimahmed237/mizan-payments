@@ -72,7 +72,7 @@ The order's lock is a PostgreSQL advisory lock on a number made from the referen
 | Idempotency keys | 30 days |
 | Webhook events, delivered store events | 90 days |
 
-A daily job deletes what is past its time, in small batches.
+A daily job deletes what is past its time, in batches of 1,000, each in its own short transaction. An event that waits or failed is never deleted: it waits for a person.
 
 ## Tests
 

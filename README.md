@@ -24,6 +24,22 @@ Mizan is built on seven rules that make these cases safe:
 
 The rules are not only claimed. A simulator breaks things on purpose, and a proof run checks the result against the simulator's own record.
 
+## Run it
+
+You need Java 21 and Docker.
+
+```bash
+./mvnw verify
+```
+
+builds everything and runs every test: the rules, the simulator, and the service against a real PostgreSQL in a container.
+
+```bash
+./mvnw package -DskipTests && docker compose up --build -d && docker compose run --rm mizan keys create --name=demo --scopes=payments,backoffice
+```
+
+starts Mizan with its database and the simulator of both gateways, and prints an API key. The API is on `http://localhost:8080`; its description is at [`/v3/api-docs`](mizan-app/src/main/resources/openapi.yaml).
+
 ## Documents
 
 | Document | What it is |

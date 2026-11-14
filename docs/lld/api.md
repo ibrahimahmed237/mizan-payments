@@ -1,6 +1,6 @@
 # API
 
-JSON over HTTPS. All paths start with `/v1`. The machine-readable description is served at `/v3/api-docs`.
+JSON over HTTPS. All paths start with `/v1`. The machine-readable description (OpenAPI 3.1, YAML) is served at `/v3/api-docs`; it is [written by hand](../../mizan-app/src/main/resources/openapi.yaml), and a test fails when it and the service's routes differ.
 
 ## Callers
 
@@ -204,11 +204,13 @@ A gateway that is down is **not** a `5xx`: the payment or operation is answered 
 | `idempotency_key_reused` | 422 | The key was used for another request |
 | `invalid_status`, `invalid_cursor` | 422 | List |
 | `gateway_unavailable` | 503 | Cancel of a waiting payment while the gateway cannot be asked |
-| `body_too_large` | 413 | A webhook over 64 KB |
+| `body_too_large` | 413 | A request body over 64 KB |
 | `file_too_large` | 413, 422 | A settlement file over 50 MB, or with more than 500,000 lines |
 | `malformed_file`, `wrong_gateway`, `wrong_currency`, `line_count_mismatch`, `line_does_not_add_up`, `payout_total_mismatch` | 422 | A settlement file that is refused as a whole |
 | `payout_exists` | 409 | The payout was imported before, with other content |
 | `still_unmatched`, `not_retryable`, `already_resolved` | 409 | Closing a discrepancy |
+| `already_waiting` | 409 | Redelivering an event that waits to be sent |
+| `too_many_requests` | 429 | Over a limit. `Retry-After` says when to come back |
 | `note_required` | 422 | Accepting a discrepancy without a note |
 
 A payment or operation that failed is not an error answer. Its `failure.code` is one of: `declined` (the bank or the provider said no; `failure.message` has its words), `gateway_refused` (the gateway refused the request), `gateway_unreachable` (no answer came, and nothing was taken), `no_effect` (an operation that was sent, got no answer, and changed nothing), `hold_gone`, `already_captured`.
@@ -235,6 +237,9 @@ Mizan-Signature: v1=5f2a...
 | Order | Not promised. `data.payment.version` lets the store drop an older event |
 | Repeats | Possible. `id` lets the store drop a repeat |
 | No URL configured | Events are kept and marked `SKIPPED`. Nothing is sent |
+| Seen by finance | `GET /v1/events?status=&payment_id=` shows each event's status, attempts, next time and last error, but not its body. `POST /v1/events/{id}/redeliver` sends a delivered, failed or skipped event again, with the same id, from the first retry time on; a waiting one: `409 already_waiting` |
+
+The event sender takes events with a lease of one minute, longer than a call to the store can take, so an event is not sent twice at once by two instances.
 
 The sender takes events with `FOR UPDATE SKIP LOCKED` and never holds a transaction open while it calls the store.
 
