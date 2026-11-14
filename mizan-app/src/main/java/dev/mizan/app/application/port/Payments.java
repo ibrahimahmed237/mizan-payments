@@ -50,6 +50,12 @@ public interface Payments {
    */
   List<UUID> claimDue(Instant now, Instant leaseEnds, int limit);
 
+  /**
+   * Payments with money that no settlement file has paid out (or taken back) and that was recorded at or before
+   * {@code before}. Candidates for the daily check.
+   */
+  List<PaymentRecord> unsettledSince(Instant before);
+
   /** Newest first. {@code before} is the place of the last payment of the page before; null for the first page. */
   List<PaymentRecord> list(String reference, PaymentStatus status, Place before, int limit);
 

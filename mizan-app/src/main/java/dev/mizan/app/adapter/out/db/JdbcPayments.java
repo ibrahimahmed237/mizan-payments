@@ -181,6 +181,17 @@ class JdbcPayments implements Payments {
   }
 
   @Override
+  public List<PaymentRecord> unsettledSince(Instant before) {
+    return jdbc.sql("SELECT " + COLUMNS + """
+         FROM payments
+        WHERE (captured_amount > settled_captured AND captured_at <= ?)
+           OR (refunded_amount > settled_refunded AND last_refund_at <= ?)
+        ORDER BY captured_at, id
+        """)
+        .param(Sql.time(before)).param(Sql.time(before)).query(JdbcPayments::read).list();
+  }
+
+  @Override
   public List<PaymentRecord> list(String reference, PaymentStatus status, Place before, int limit) {
     var where = new ArrayList<String>();
     var values = new ArrayList<Object>();

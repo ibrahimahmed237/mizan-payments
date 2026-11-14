@@ -7,17 +7,11 @@ import dev.mizan.app.support.IntegrationTest;
 import dev.mizan.simulator.Call;
 import dev.mizan.simulator.Fault;
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 /** Looking at the gateway and writing down what it says (rule R1), without the worker. See docs/lld/sync.md. */
 class SyncIT extends IntegrationTest {
-
-  private List<String> discrepancies(String paymentId) {
-    return jdbc.sql("SELECT type || ' ' || status || ' ' || expected || ' ' || actual FROM discrepancies WHERE payment_id = ? ORDER BY created_at")
-        .param(UUID.fromString(paymentId)).query(String.class).list();
-  }
 
   @Test
   void a_customer_who_passes_the_banks_page_is_found_by_a_look_without_any_webhook() {
@@ -72,7 +66,7 @@ class SyncIT extends IntegrationTest {
     // "Paid" for another amount is not this payment's money. A person must look.
     assertThat(synced.text("status")).isEqualTo("PENDING");
     assertThat(entries(id)).isEmpty();
-    assertThat(discrepancies(id)).containsExactly("AMOUNT_CONFLICT OPEN 15000 15100"); // one, however often Mizan looks
+    assertThat(discrepancies(id)).containsExactly("AMOUNT_CONFLICT OPEN 15000 15100 0"); // one, however often Mizan looks
     assertThat(events(id)).containsExactly("discrepancy.opened");
   }
 

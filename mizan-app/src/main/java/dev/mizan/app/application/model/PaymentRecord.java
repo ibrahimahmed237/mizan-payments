@@ -2,6 +2,7 @@ package dev.mizan.app.application.model;
 
 import dev.mizan.core.payment.Method;
 import dev.mizan.core.payment.Payment;
+import dev.mizan.core.settlement.PaymentView;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -40,6 +41,18 @@ public record PaymentRecord(
     return new PaymentRecord(
         id, reference, method, description, returnUrl, gatewayPaymentId, changed, settledCaptured, settledRefunded,
         nextSyncAt, syncRequested, lastSyncedAt, syncFailures, version, createdAt, updatedAt);
+  }
+
+  /** How much of the totals the gateway has paid out and taken back so far. */
+  public PaymentRecord withSettled(long captured, long refunded) {
+    return new PaymentRecord(
+        id, reference, method, description, returnUrl, gatewayPaymentId, payment, captured, refunded,
+        nextSyncAt, syncRequested, lastSyncedAt, syncFailures, version, createdAt, updatedAt);
+  }
+
+  /** What matching and the daily check need to know about the payment. */
+  public PaymentView forSettlement() {
+    return new PaymentView(payment.captured(), payment.refunded(), settledCaptured, settledRefunded);
   }
 
   public PaymentRecord withGatewayPaymentId(String gatewayId) {

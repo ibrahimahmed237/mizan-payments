@@ -211,7 +211,65 @@ class SchemaIT extends IntegrationTest {
     refused("discrepancies_resolved", () -> jdbc.sql("UPDATE discrepancies SET resolution = 'ACCEPTED' WHERE payment_id = ?").param(id).update());
   }
 
+  // ---------------------------------------------------------------- settlement
+
+  @Test
+  void a_payout_is_imported_once_and_a_line_adds_up() {
+    UUID file = settlementFile("po_schema_" + UUID.randomUUID());
+
+    refused("settlement_files_once", () -> jdbc.sql("""
+        INSERT INTO settlement_files (id, gateway, payout_id, payout_date, total_net, line_count, sha256, created_at)
+        SELECT gen_random_uuid(), gateway, payout_id, payout_date, 0, 0, 'other', now() FROM settlement_files WHERE id = ?
+        """).param(file).update());
+    refused("settlement_lines_net", () -> line(file, 1, 1_000, 30, 900, "NEW", true));
+    refused("settlement_lines_waiting", () -> line(file, 2, 1_000, 30, 970, "MATCHED", true));
+    refused("settlement_lines_waiting", () -> line(file, 3, 1_000, 30, 970, "NEW", false));
+    refused("settlement_lines_place", () -> transactions.run(() -> { // rolled back whole: nothing is left for the matching worker
+      line(file, 4, 1_000, 30, 970, "NEW", true);
+      line(file, 4, 1_000, 30, 970, "NEW", true);
+    }));
+    refused("settlement_lines_status_check", () -> line(file, 5, 1_000, 30, 970, "PAID", false));
+  }
+
+  @Test
+  void a_line_has_one_open_discrepancy_but_two_lines_of_one_payment_can_have_the_same_kind() {
+    UUID payment = payment("CAPTURED", 1_000, 1_000, 0);
+    UUID file = settlementFile("po_schema_" + UUID.randomUUID());
+    // Lines whose net is zero: they leave the bank as it is, so the books still hold after this test.
+    UUID one = line(file, 1, 30, 30, 0, "MATCHED", false);
+    UUID two = line(file, 2, 30, 30, 0, "MATCHED", false);
+    lineDiscrepancy(one, payment);
+
+    refused("discrepancies_open_per_line", () -> lineDiscrepancy(one, payment));
+    lineDiscrepancy(two, payment); // the same type for the same payment, on another line
+  }
+
   // ---------------------------------------------------------------- helpers
+
+  private UUID settlementFile(String payoutId) {
+    UUID id = UUID.randomUUID();
+    jdbc.sql("""
+        INSERT INTO settlement_files (id, gateway, payout_id, payout_date, total_net, line_count, sha256, created_at)
+        VALUES (?, 'CARD_GATEWAY', ?, current_date, 0, 0, 'h', now())
+        """).param(id).param(payoutId).update();
+    return id;
+  }
+
+  private UUID line(UUID file, int number, long gross, long fee, long net, String status, boolean waiting) {
+    UUID id = UUID.randomUUID();
+    jdbc.sql("""
+        INSERT INTO settlement_lines (id, file_id, line_number, gateway, transaction_id, gateway_payment_id, type, type_text, gross, fee, net,
+          occurred_at, status, next_attempt_at)
+        VALUES (?, ?, ?, 'CARD_GATEWAY', ?, 'p', 'CAPTURE', 'capture', ?, ?, ?, now(), ?, CASE WHEN ? THEN now() END)
+        """).param(id).param(file).param(number).param("txn_" + id).param(gross).param(fee).param(net).param(status).param(waiting).update();
+    return id;
+  }
+
+  private void lineDiscrepancy(UUID line, UUID payment) {
+    jdbc.sql("INSERT INTO discrepancies (id, type, line_id, payment_id, created_at) VALUES (?, 'AMOUNT_MISMATCH', ?, ?, now())")
+        .param(UUID.randomUUID()).param(line).param(payment).update();
+  }
+
 
   private void refused(String because, Runnable statement) {
     assertThatThrownBy(statement::run).isInstanceOf(DataAccessException.class).hasMessageContaining(because);

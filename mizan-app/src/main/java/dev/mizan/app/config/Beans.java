@@ -4,9 +4,12 @@ import dev.mizan.app.adapter.in.web.WebhookReader;
 import dev.mizan.app.adapter.out.gateway.HttpGateways;
 import dev.mizan.app.application.Settings;
 import dev.mizan.app.application.port.Gateways;
+import dev.mizan.core.fees.FeeRule;
+import dev.mizan.core.payment.Gateway;
 import java.time.Instant;
 import java.time.InstantSource;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -38,7 +41,11 @@ class Beans {
         properties.operation().quietTime(),
         properties.returnUrlPrefixes(),
         stripSlash(properties.publicUrl()),
-        properties.operation().idempotencyKeysKept());
+        properties.operation().idempotencyKeysKept(),
+        Map.of(
+            Gateway.CARD_GATEWAY, feeRule(properties.fees().card()),
+            Gateway.PAY_LATER, feeRule(properties.fees().payLater())),
+        properties.settlement().missingAfter());
   }
 
   @Bean
@@ -53,6 +60,10 @@ class Beans {
   @Bean
   WebhookReader webhookReader(MizanProperties properties) {
     return new WebhookReader(new WebhookReader.Secrets(properties.cardGateway().webhookSecret(), properties.payLater().webhookSecret()));
+  }
+
+  private static FeeRule feeRule(MizanProperties.FeeProperties fee) {
+    return new FeeRule(fee.percentBps(), fee.fixed(), fee.vatBps());
   }
 
   private static String stripSlash(String url) {

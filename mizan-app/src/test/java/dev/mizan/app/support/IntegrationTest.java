@@ -1,10 +1,13 @@
 package dev.mizan.app.support;
 
+import dev.mizan.app.application.RunDueLines;
 import dev.mizan.app.application.RunDuePayments;
 import dev.mizan.app.support.Api.Answer;
+import dev.mizan.core.payment.Gateway;
 import dev.mizan.simulator.SimPayment;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +30,7 @@ public abstract class IntegrationTest {
   @AfterEach
   void theBooksHold() {
     Books.check(jdbc);
+    Books.checkSettlements(jdbc);
   }
 
   // ---------------------------------------------------------------- making things
@@ -162,6 +166,60 @@ public abstract class IntegrationTest {
         throw new IllegalStateException(e);
       }
     }
+  }
+
+  // ---------------------------------------------------------------- settlement
+
+  private static final AtomicInteger PAYOUT_DAYS = new AtomicInteger();
+
+  /** Finance's API. */
+  protected final Api finance = new Api(world.baseUrl, world.backofficeKey);
+
+  /**
+   * The gateway closes a payout now: every capture and refund it has not paid out yet, of every test so far, goes
+   * into one settlement file. Each call has a date of its own, so a payout is never answered from an earlier one.
+   */
+  protected String payout(Gateway gateway) {
+    return world.simulator.closePayout(gateway, LocalDate.of(2030, 1, 1).plusDays(PAYOUT_DAYS.incrementAndGet()));
+  }
+
+  /**
+   * Closes a payout of each gateway and throws the files away. A test calls this before it makes its own payments,
+   * so that its next payout holds only its own money.
+   */
+  protected void freshPayouts() {
+    payout(Gateway.CARD_GATEWAY);
+    payout(Gateway.PAY_LATER);
+  }
+
+  protected Answer upload(String file) {
+    return finance.send("POST", "/v1/settlements", file, null);
+  }
+
+  /** Rounds of the matching worker until no line waits that is due now. */
+  protected void match() {
+    while (world.app.getBean(RunDueLines.class).handle(1_000) > 0) {
+      // more may be due: a line whose payment was just synced
+    }
+  }
+
+  /** A file's lines as {@code status type gross}, in file order. */
+  protected List<String> lines(String fileId) {
+    return jdbc.sql("SELECT status || ' ' || type || ' ' || gross FROM settlement_lines WHERE file_id = ? ORDER BY line_number")
+        .param(UUID.fromString(fileId)).query(String.class).list();
+  }
+
+  /** The discrepancies about a payment, as {@code TYPE STATUS expected actual suspense}, oldest first. */
+  protected List<String> discrepancies(String paymentId) {
+    return jdbc.sql("""
+        SELECT type || ' ' || status || ' ' || coalesce(expected::text, '-') || ' ' || coalesce(actual::text, '-') || ' ' || suspense_amount
+        FROM discrepancies WHERE payment_id = ? ORDER BY seq
+        """).param(UUID.fromString(paymentId)).query(String.class).list();
+  }
+
+  /** The card gateway's fee for a capture, from the simulator's contract. */
+  protected long cardFee(long gross) {
+    return world.simulator.config().cardFee().feeFor(gross);
   }
 
   // ---------------------------------------------------------------- time

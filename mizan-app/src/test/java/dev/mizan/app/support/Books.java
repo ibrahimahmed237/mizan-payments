@@ -38,6 +38,17 @@ public final class Books {
     assertThat(-sales).as("I3: sales (a credit balance)").isEqualTo(expected);
   }
 
+  /** Checks I4, and that the bank holds exactly what the handled settlement lines sent to it. */
+  public static void checkSettlements(JdbcClient jdbc) {
+    // I4: suspense = the net amounts of the lines that are in suspense now. A credit balance, so its sign turns.
+    long suspenseLines = jdbc.sql("SELECT coalesce(sum(net), 0) FROM settlement_lines WHERE status = 'SUSPENSE'").query(Long.class).single();
+    assertThat(-balance(jdbc, "suspense")).as("I4: suspense against the lines in suspense").isEqualTo(suspenseLines);
+    // The bank holds exactly what the handled lines sent to it.
+    long handledNet = jdbc.sql("SELECT coalesce(sum(net), 0) FROM settlement_lines WHERE status IN ('MATCHED', 'SUSPENSE', 'ACCEPTED')")
+        .query(Long.class).single();
+    assertThat(balance(jdbc, "bank")).as("the bank against the handled lines").isEqualTo(handledNet);
+  }
+
   /** An account's balance, debits minus credits. */
   public static long balance(JdbcClient jdbc, String account) {
     return jdbc.sql("SELECT coalesce(sum(CASE WHEN side = 'DEBIT' THEN amount ELSE -amount END), 0) FROM ledger_postings WHERE account = ?")

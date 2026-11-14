@@ -213,6 +213,29 @@ class WebhookIT extends IntegrationTest {
     assertThat(jdbc.sql("SELECT count(*) FROM outbox_events WHERE payment_id IS NULL").query(Long.class).single()).isEqualTo(eventsBefore + 1);
   }
 
+  @Test
+  void an_event_cannot_take_over_a_payment_that_has_its_own_id_at_the_gateway() {
+    String card = pay(newOrder(), 15_000, "3333", "AUTO").text("id");
+    String order = newOrder();
+    world.simulator.plan(order, Call.CREATE, Fault.LOST_ANSWER);
+    String payLaterWithoutId = api.post("/v1/payments", payLater(order, 15_000, "MANUAL")).text("id");
+    String foreign = "pay_" + UUID.randomUUID();
+
+    // An event about an unknown gateway payment that names one of Mizan's payments as its own.
+    String body = cardBody(newEvent(), "payment_paid", foreign, cardSecret(), "paid")
+        .replace("\"status\":\"paid\"", "\"status\":\"paid\",\"metadata\":{\"mizan_payment_id\":\"" + card + "\"}");
+    String other = cardBody(newEvent(), "payment_paid", foreign + "-2", cardSecret(), "paid")
+        .replace("\"status\":\"paid\"", "\"status\":\"paid\",\"metadata\":{\"mizan_payment_id\":\"" + payLaterWithoutId + "\"}");
+    card(body);
+    card(other);
+
+    // The card payment has its own id at the gateway. The pay-later payment has none, but it is not the card gateway's.
+    assertThat(gatewayId(card)).isEqualTo(card);
+    assertThat(gatewayId(payLaterWithoutId)).isNull();
+    assertThat(unknownPaymentDiscrepancies(foreign)).hasSize(1);
+    assertThat(unknownPaymentDiscrepancies(foreign + "-2")).hasSize(1);
+  }
+
   // ---------------------------------------------------------------- pay later
 
   @Test
@@ -364,6 +387,26 @@ class WebhookIT extends IntegrationTest {
     // The look failed. Without the hint, the next look would be 30 seconds away. With it, the payment stays due.
     assertThat(column(id, "sync_failures")).isEqualTo("1");
     assertThat(time(id, "next_sync_at")).isEqualTo(now());
+  }
+
+  @Test
+  void a_look_that_is_not_the_workers_leaves_the_request_standing() {
+    String order = newOrder();
+    String id = pay(order, 15_000, "3333", "AUTO").text("id");
+    advance(Duration.ofSeconds(5));
+    world.simulator.customerApproves(id);
+    card(cardBody(newEvent(), "payment_paid", id, cardSecret(), "paid"));
+
+    api.withKey(null).get("/v1/return/" + id); // the customer comes back: a look, but not the worker's
+
+    // The look found the money. The request stays up all the same: only a worker's claim, taken before its fetch,
+    // proves that a look started after the request. One look too many is safe; one too few is not.
+    assertThat(payment(id).text("status")).isEqualTo("CAPTURED");
+    assertThat(column(id, "sync_requested")).isEqualTo("true");
+    assertThat(time(id, "next_sync_at")).isEqualTo(now());
+    round();
+    assertThat(column(id, "sync_requested")).isEqualTo("false");
+    assertThat(column(id, "next_sync_at")).isNull();
   }
 
   @Test

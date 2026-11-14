@@ -21,7 +21,9 @@ public record MizanProperties(
     @DefaultValue OperationProperties operation,
     @DefaultValue GatewayProperties cardGateway,
     @DefaultValue GatewayProperties payLater,
-    @DefaultValue HttpProperties http) {
+    @DefaultValue HttpProperties http,
+    @DefaultValue SettlementProperties settlement,
+    @DefaultValue FeesProperties fees) {
 
   /**
    * @param maxAmount the largest payment, in halalas
@@ -48,6 +50,27 @@ public record MizanProperties(
 
   /** Time limits of a gateway call. */
   public record HttpProperties(@DefaultValue("2s") Duration connectTimeout, @DefaultValue("10s") Duration timeout) {}
+
+  /** @param missingAfter how long a gateway may take to pay out a capture or take back a refund */
+  public record SettlementProperties(@DefaultValue("3d") Duration missingAfter) {}
+
+  /**
+   * The fee table, from the store's contract with each gateway. The defaults are examples.
+   *
+   * @param percentBps hundredths of a percent: 250 is 2.5%
+   * @param fixed halalas added to each capture
+   * @param vatBps VAT on the fee, in hundredths of a percent
+   */
+  public record FeeProperties(int percentBps, long fixed, int vatBps) {}
+
+  /** The fee rule of each gateway. One that is not set gets the example. */
+  public record FeesProperties(FeeProperties card, FeeProperties payLater) {
+
+    public FeesProperties {
+      card = card == null ? new FeeProperties(250, 100, 1500) : card;
+      payLater = payLater == null ? new FeeProperties(400, 0, 1500) : payLater;
+    }
+  }
 
   /** Stops the start when a needed setting is missing, and says which. */
   public MizanProperties {
