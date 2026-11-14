@@ -3,6 +3,7 @@ package dev.mizan.core.operation;
 import static dev.mizan.core.Fixtures.AMOUNT;
 import static dev.mizan.core.Fixtures.NOW;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.mizan.core.Fixtures;
 import dev.mizan.core.payment.CaptureMode;
@@ -10,6 +11,9 @@ import dev.mizan.core.payment.Gateway;
 import dev.mizan.core.payment.GatewayStatus;
 import dev.mizan.core.payment.Payment;
 import dev.mizan.core.payment.PaymentStatus;
+import dev.mizan.core.sync.Decision;
+import dev.mizan.core.sync.Effect.Notify;
+import dev.mizan.core.sync.EventType;
 import java.util.Optional;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -98,6 +102,25 @@ class CommandRulesTest {
     void a_payment_waiting_for_the_customer_is_canceled_here() {
       assertThat(CommandRules.cancel(Fixtures.pending(), false)).isEmpty();
       assertThat(CommandRules.cancelKind(Fixtures.pending())).isEqualTo(CommandRules.Cancel.CANCEL_HERE);
+    }
+
+    @Test
+    void canceling_here_ends_the_payment_and_tells_the_store() {
+      Decision decision = CommandRules.cancelHere(Fixtures.pending());
+
+      assertThat(decision.payment().status()).isEqualTo(PaymentStatus.CANCELED);
+      assertThat(decision.payment().actionUrl()).isNull();
+      assertThat(decision.payment().gatewayStatus()).isEqualTo(GatewayStatus.INITIATED); // the gateway was not told
+      assertThat(decision.effects()).containsExactly(new Notify(EventType.PAYMENT_CANCELED));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = PaymentStatus.class, names = {"FAILED", "CANCELED", "EXPIRED"})
+    void only_a_pending_payment_is_canceled_here(PaymentStatus status) {
+      assertThatThrownBy(() -> CommandRules.cancelHere(Fixtures.dead(status, GatewayStatus.INITIATED)))
+          .isInstanceOf(IllegalArgumentException.class);
+      assertThatThrownBy(() -> CommandRules.cancelHere(Fixtures.authorized())).isInstanceOf(IllegalArgumentException.class);
+      assertThatThrownBy(() -> CommandRules.cancelHere(Fixtures.captured(AMOUNT, 0))).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

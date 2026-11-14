@@ -149,7 +149,13 @@ public final class Sync {
 
     private void fromPending() {
       switch (snapshot.status()) {
-        case INITIATED -> payment = payment.with(p -> p.actionUrl = snapshot.actionUrl());
+        case INITIATED -> {
+          // Some gateways give the customer's address only in the answer to the create call. A later record
+          // without it does not take it away.
+          if (snapshot.actionUrl() != null) {
+            payment = payment.with(p -> p.actionUrl = snapshot.actionUrl());
+          }
+        }
         case AUTHORIZED -> {
           payment = payment.with(p -> {
             p.status = PaymentStatus.AUTHORIZED;

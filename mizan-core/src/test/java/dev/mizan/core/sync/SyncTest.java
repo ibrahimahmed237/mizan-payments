@@ -119,6 +119,14 @@ class SyncTest {
     }
 
     @Test
+    void a_record_without_a_page_address_does_not_take_the_address_away() {
+      Decision decision = sync(Fixtures.pending(), status(GatewayStatus.INITIATED));
+
+      assertThat(decision.payment().actionUrl()).isEqualTo(Fixtures.pending().actionUrl());
+      assertThat(decision.payment()).isEqualTo(Fixtures.pending());
+    }
+
+    @Test
     void a_hold_sets_its_end_and_cancels_the_orders_other_payments() {
       Decision decision = sync(Fixtures.pending(), status(GatewayStatus.AUTHORIZED));
 

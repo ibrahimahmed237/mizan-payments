@@ -66,6 +66,8 @@ class PaymentTest {
     assertThat(Method.CARD.gateway()).isEqualTo(Gateway.CARD_GATEWAY);
     assertThat(Method.APPLE_PAY.gateway()).isEqualTo(Gateway.CARD_GATEWAY);
     assertThat(Method.PAY_LATER.gateway()).isEqualTo(Gateway.PAY_LATER);
+    assertThat(Gateway.CARD_GATEWAY.callerChoosesId()).isTrue();
+    assertThat(Gateway.PAY_LATER.callerChoosesId()).isFalse();
     assertThat(Gateway.CARD_GATEWAY.capturesByItself()).isTrue();
     assertThat(Gateway.CARD_GATEWAY.supportsPartialCapture()).isTrue();
     assertThat(Gateway.CARD_GATEWAY.hasRefundKey()).isFalse();

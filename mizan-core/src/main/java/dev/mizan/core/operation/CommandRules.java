@@ -2,7 +2,11 @@ package dev.mizan.core.operation;
 
 import dev.mizan.core.payment.Payment;
 import dev.mizan.core.payment.PaymentStatus;
+import dev.mizan.core.sync.Decision;
+import dev.mizan.core.sync.Effect.Notify;
+import dev.mizan.core.sync.EventType;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -51,6 +55,22 @@ public final class CommandRules {
 
   public static Cancel cancelKind(Payment payment) {
     return payment.status() == PaymentStatus.AUTHORIZED ? Cancel.VOID_AT_GATEWAY : Cancel.CANCEL_HERE;
+  }
+
+  /**
+   * Cancels a payment that the customer has not paid, without a gateway call. The caller has just seen, in the
+   * gateway's own record, that no money was taken. If the customer pays later after all, that is a late capture.
+   */
+  public static Decision cancelHere(Payment payment) {
+    if (payment.status() != PaymentStatus.PENDING) {
+      throw new IllegalArgumentException("Only a pending payment is canceled without a call.");
+    }
+    return new Decision(
+        payment.with(p -> {
+          p.status = PaymentStatus.CANCELED;
+          p.actionUrl = null;
+        }),
+        List.of(new Notify(EventType.PAYMENT_CANCELED)));
   }
 
   public static Optional<Refusal> refund(Payment payment, long amount, boolean operationInFlight) {
