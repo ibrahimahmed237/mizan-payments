@@ -1,0 +1,45 @@
+# Mizan's settings. The environment overrides them. Secrets have no default. See docs/lld/running.md.
+
+spring:
+  application:
+    name: mizan
+  datasource:
+    url: ${MIZAN_DB_URL:}
+    username: ${MIZAN_DB_USER:}
+    password: ${MIZAN_DB_PASSWORD:}
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    deserialization:
+      # A field Mizan does not know is a mistake of the caller, not something to skip in silence.
+      fail-on-unknown-properties: true
+      # 150.5 is not a whole number of halalas, and must not quietly become 150.
+      accept-float-as-int: false
+    mapper:
+      # "150" is text, not a number.
+      allow-coercion-of-scalars: false
+
+server:
+  port: ${MIZAN_PORT:8080}
+  error:
+    whitelabel:
+      enabled: false
+
+mizan:
+  public-url: ${MIZAN_PUBLIC_URL:}
+  return-url-prefixes: ${MIZAN_RETURN_URL_PREFIXES:}
+  card-gateway:
+    url: ${MIZAN_CARD_GATEWAY_URL:}
+    key: ${MIZAN_CARD_GATEWAY_KEY:}
+    webhook-secret: ${MIZAN_CARD_GATEWAY_WEBHOOK_SECRET:}
+  pay-later:
+    url: ${MIZAN_PAY_LATER_URL:}
+    key: ${MIZAN_PAY_LATER_KEY:}
+    webhook-secret: ${MIZAN_PAY_LATER_WEBHOOK_SECRET:}
+  payment:
+    max-amount: 10000000
+    card-wait: 30m
+    pay-later-wait: 2h
+    hold-window: 7d
+    late-capture: REFUND
+  operation:
+    quiet-time: 1m
