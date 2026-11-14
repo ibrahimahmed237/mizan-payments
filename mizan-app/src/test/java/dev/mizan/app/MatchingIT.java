@@ -8,9 +8,12 @@ import dev.mizan.app.support.Books;
 import dev.mizan.app.support.IntegrationTest;
 import dev.mizan.core.payment.Gateway;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -97,6 +100,47 @@ class MatchingIT extends IntegrationTest {
   }
 
   @Test
+  void two_lines_of_one_payment_matched_at_the_same_moment_are_both_counted() throws Exception {
+    List<String> ids = new ArrayList<>();
+    for (int i = 0; i < 20; i++) {
+      String id = captured(newOrder(), 10_000);
+      api.post("/v1/payments/" + id + "/refunds", Map.of("amount", 3_000));
+      ids.add(id);
+    }
+    String file = upload(payout(Gateway.CARD_GATEWAY)).text("id");
+    String byPayment = "SELECT id FROM settlement_lines WHERE file_id = ? AND type = ? ORDER BY gateway_payment_id";
+    List<UUID> captures = jdbc.sql(byPayment).param(UUID.fromString(file)).param("CAPTURE").query(UUID.class).list();
+    List<UUID> refunds = jdbc.sql(byPayment).param(UUID.fromString(file)).param("REFUND").query(UUID.class).list();
+    MatchLine matchLine = world.app.getBean(MatchLine.class);
+
+    // One worker takes a payment's capture line while another takes its refund line, at the same moment.
+    CyclicBarrier together = new CyclicBarrier(2);
+    ExecutorService workers = Executors.newFixedThreadPool(2);
+    try {
+      List<Future<?>> done = new ArrayList<>();
+      for (List<UUID> lines : List.of(captures, refunds)) {
+        done.add(workers.submit(() -> {
+          for (UUID line : lines) {
+            together.await(10, TimeUnit.SECONDS);
+            matchLine.handle(line);
+          }
+          return null;
+        }));
+      }
+      for (Future<?> worker : done) {
+        worker.get(60, TimeUnit.SECONDS);
+      }
+    } finally {
+      workers.shutdownNow();
+    }
+
+    // Each worker locks the payment before it reads it, so neither write is lost.
+    for (String id : ids) {
+      assertThat(column(id, "settled_captured") + " " + column(id, "settled_refunded")).as(id).isEqualTo("10000 3000");
+    }
+  }
+
+  @Test
   void lines_are_taken_in_file_order() {
     for (int i = 0; i < 3; i++) {
       captured(newOrder(), 10_000 + i);
@@ -105,7 +149,9 @@ class MatchingIT extends IntegrationTest {
     String file = upload(payout(Gateway.CARD_GATEWAY)).text("id");
     List<UUID> ids = lineIds(file);
 
-    assertThat(settlements.claimDue(now(), now().plus(MatchLine.LEASE), 2)).isEqualTo(ids.subList(0, 2));
+    // The first two lines of the file are taken. The order of the answer itself is not promised: UPDATE ... RETURNING
+    // gives the rows in no fixed order, and nothing depends on it (a duplicate is decided by the file order, not by this).
+    assertThat(settlements.claimDue(now(), now().plus(MatchLine.LEASE), 2)).containsExactlyInAnyOrderElementsOf(ids.subList(0, 2));
     match();
     advance(Duration.ofSeconds(30));
     match();

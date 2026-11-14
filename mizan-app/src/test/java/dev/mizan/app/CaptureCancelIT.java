@@ -8,7 +8,10 @@ import dev.mizan.core.payment.GatewayStatus;
 import dev.mizan.simulator.Call;
 import dev.mizan.simulator.Fault;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -128,6 +131,27 @@ class CaptureCancelIT extends IntegrationTest {
     assertThat(payment(id).text("status")).isEqualTo("CAPTURED");
     assertThat(atGateway(id).charges()).isEqualTo(1);
     assertThat(entries(id)).containsExactly("CAPTURE 15000");
+  }
+
+  @Test
+  void while_the_gateway_is_called_no_transaction_is_open_and_the_payment_is_not_locked() {
+    String order = newOrder();
+    String id = authorized(order, 15_000);
+    world.simulator.plan(order, Call.CAPTURE, Fault.TIMEOUT_BEFORE); // the gateway is silent until Mizan's timeout
+    CompletableFuture<Answer> call = CompletableFuture.supplyAsync(() -> capture(id, null));
+
+    // Rule R5. The operation was written and committed before the call left...
+    await(() -> operations(id).contains("CAPTURE IN_FLIGHT API 15000"));
+    // ...and while the gateway is silent, no transaction is open and nobody holds the payment's row.
+    long openTransactions = jdbc.sql("SELECT count(*) FROM pg_stat_activity WHERE state LIKE 'idle in transaction%'")
+        .query(Long.class).single();
+    List<UUID> locked = jdbc.sql("SELECT id FROM payments WHERE id = ? FOR UPDATE NOWAIT").param(UUID.fromString(id))
+        .query(UUID.class).list();
+
+    assertThat(call).as("the call is still waiting for the gateway").isNotDone();
+    assertThat(openTransactions).isZero();
+    assertThat(locked).hasSize(1);
+    assertThat(call.join().status()).isEqualTo(202);
   }
 
   @ParameterizedTest

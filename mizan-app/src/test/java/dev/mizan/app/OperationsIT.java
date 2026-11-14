@@ -160,6 +160,20 @@ class OperationsIT extends IntegrationTest {
   }
 
   @Test
+  void money_received_and_not_explained_shows_as_a_positive_suspense() {
+    MeterRegistry meters = world.app.getBean(MeterRegistry.class);
+    freshPayouts();
+    captured(newOrder(), 15_000);
+    double before = meters.get("mizan.ledger.suspense").gauge().value();
+    world.simulator.planFile(FileFault.EXTRA_LINE, null); // 50.00 for a payment that does not exist
+
+    upload(payout(Gateway.CARD_GATEWAY));
+    match();
+
+    assertThat(meters.get("mizan.ledger.suspense").gauge().value() - before).isEqualTo((double) 5_000 - cardFee(5_000));
+  }
+
+  @Test
   void health_and_metrics_are_served_without_an_api_key_and_nothing_else_of_the_inside_is() {
     Api outside = api.withKey(null);
 

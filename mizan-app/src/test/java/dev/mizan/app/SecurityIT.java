@@ -8,9 +8,17 @@ import dev.mizan.app.application.model.ApiKey;
 import dev.mizan.app.support.Api;
 import dev.mizan.app.support.Api.Answer;
 import dev.mizan.app.support.IntegrationTest;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.Socket;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Who may call what. See docs/lld/api.md, "Callers", and docs/lld/running.md, "Security details". */
 class SecurityIT extends IntegrationTest {
@@ -56,6 +64,24 @@ class SecurityIT extends IntegrationTest {
     assertThat(create.status()).isEqualTo(403);
     assertThat(backoffice.status()).isEqualTo(403);
     assertThat(backoffice.text("title")).contains("backoffice");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "/v1/payments/../ledger/balances", "/v1/payments/%2e%2e/ledger/balances", "/v1/payments/..;/ledger/balances",
+      "/v1/payments/./../ledger/balances", "/v1/payments/%2E%2E/ledger/balances"})
+  void a_path_that_only_starts_like_payments_does_not_get_past_the_scope(String path) throws IOException {
+    // Sent as it is, byte for byte: an HTTP client would clean the path up before sending it.
+    URI base = URI.create(world.baseUrl);
+    try (Socket socket = new Socket(base.getHost(), base.getPort())) {
+      socket.setSoTimeout(5_000);
+      String request = "GET " + path + " HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer " + world.paymentsKey
+          + "\r\nConnection: close\r\n\r\n";
+      socket.getOutputStream().write(request.getBytes(StandardCharsets.US_ASCII));
+      String statusLine = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII)).readLine();
+
+      assertThat(statusLine).as(path).isNotNull().doesNotContain(" 200 ");
+    }
   }
 
   @Test

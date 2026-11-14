@@ -218,6 +218,24 @@ class ReconciliationIT extends IntegrationTest {
     assertThat(discrepancies(id)).containsExactly("AMOUNT_MISMATCH OPEN 15000 15100 " + net);
     assertThat(settled(id, "settled_captured")).isZero();
     assertThat(gatewayPaymentLineStatus(id)).isEqualTo("SUSPENSE CAPTURE");
+    assertThat(events(id)).containsExactly("payment.captured", "discrepancy.opened"); // the store is told
+  }
+
+  @Test
+  void a_refund_line_that_the_gateway_does_not_know_either_is_held_in_suspense() {
+    String id = captured(newOrder(), 15_000);
+    String gatewayId = column(id, "gateway_payment_id");
+    // No refund was made, at Mizan or at the gateway. The simulator never writes such a line, so the file is written here.
+    String file = String.join("\n",
+        "H,payout_unknown_refund_" + UUID.randomUUID() + ",card_gateway,SAR,2031-02-01,-3000,1",
+        "L,txn_unknown_refund_" + UUID.randomUUID() + "," + gatewayId + ",refund,-3000,0,-3000,2031-01-31T09:00:00Z");
+
+    upload(file);
+    match();
+
+    // Expected: no refund waiting to be settled. Actual: a refund of 30.00. The bank lost 30.00 that nobody can explain.
+    assertThat(discrepancies(id)).containsExactly("UNKNOWN_REFUND OPEN 0 3000 -3000");
+    assertThat(settled(id, "settled_refunded")).isZero();
   }
 
   @Test
@@ -268,6 +286,22 @@ class ReconciliationIT extends IntegrationTest {
     assertThat(gatewayPaymentLineStatus(id)).isEqualTo("MATCHED CAPTURE,SUSPENSE CAPTURE");
     assertThat(discrepancies(id)).containsExactly("DUPLICATE_SETTLEMENT OPEN - 15000 " + net);
     assertThat(settled(id, "settled_captured")).isEqualTo(15_000); // settled once
+  }
+
+  @Test
+  void when_both_files_wait_together_the_earlier_line_is_the_one_that_counts() {
+    String order = newOrder();
+    String id = captured(order, 15_000);
+    String first = payout(Gateway.CARD_GATEWAY);
+    world.simulator.planFile(FileFault.DUPLICATE_LINE, order);
+    String second = payout(Gateway.CARD_GATEWAY);
+
+    upload(first);
+    upload(second); // both wait: neither line is matched yet
+    match();
+
+    assertThat(gatewayPaymentLineStatus(id)).isEqualTo("MATCHED CAPTURE,SUSPENSE CAPTURE");
+    assertThat(discrepancies(id)).hasSize(1).allMatch(d -> d.startsWith("DUPLICATE_SETTLEMENT OPEN"));
   }
 
   @Test
