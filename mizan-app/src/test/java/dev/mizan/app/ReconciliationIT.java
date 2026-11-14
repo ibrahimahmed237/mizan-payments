@@ -2,9 +2,16 @@ package dev.mizan.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.mizan.app.application.SettlementWriter;
+import dev.mizan.app.application.model.LineRecord;
+import dev.mizan.app.application.model.PaymentRecord;
+import dev.mizan.app.application.port.Payments;
+import dev.mizan.app.application.port.Settlements;
+import dev.mizan.app.application.port.Transactions;
 import dev.mizan.app.support.Api.Answer;
 import dev.mizan.app.support.Books;
 import dev.mizan.app.support.IntegrationTest;
+import dev.mizan.core.ledger.Entries;
 import dev.mizan.core.payment.Gateway;
 import dev.mizan.simulator.Call;
 import dev.mizan.simulator.Fault;
@@ -13,6 +20,11 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -536,6 +548,56 @@ class ReconciliationIT extends IntegrationTest {
 
     assertThat(settled(id, "settled_refunded")).isEqualTo(4_000);
     assertThat(discrepancies(id)).containsExactly("MISSING_FROM_SETTLEMENT OPEN 19000 0 0"); // the capture still is
+  }
+
+  @Test
+  void a_line_matched_while_the_daily_check_runs_is_seen_by_the_check() throws Exception {
+    String id = captured(newOrder(), 15_000);
+    String file = upload(payout(Gateway.CARD_GATEWAY)).text("id"); // uploaded, not matched yet
+    UUID line = jdbc.sql("SELECT id FROM settlement_lines WHERE file_id = ?").param(UUID.fromString(file)).query(UUID.class).single();
+    advance(Duration.ofDays(3)); // the capture is old enough to be missing
+    var transactions = world.app.getBean(Transactions.class);
+    var settlements = world.app.getBean(Settlements.class);
+    var payments = world.app.getBean(Payments.class);
+    var writer = world.app.getBean(SettlementWriter.class);
+    var check = world.app.getBean(dev.mizan.app.application.CheckMissingSettlements.class);
+    CountDownLatch locked = new CountDownLatch(1);
+    CountDownLatch go = new CountDownLatch(1);
+    ExecutorService threads = Executors.newFixedThreadPool(2);
+    try {
+      // A matching worker holds the line and the payment, as it does while it matches.
+      Future<?> matching = threads.submit(() -> transactions.run(() -> {
+        LineRecord held = settlements.lockLine(line).orElseThrow();
+        PaymentRecord payment = payments.lock(UUID.fromString(id)).orElseThrow();
+        locked.countDown();
+        await(go);
+        writer.matched(held, payment, Entries.settle(held.id(), held.line().gross(), held.line().fee()), now());
+      }));
+      locked.await(10, TimeUnit.SECONDS);
+      // The daily check starts. It must wait for the payment, not decide on what it read before.
+      Future<Integer> checked = threads.submit(check::handle);
+      await(() -> checked.isDone() || waitsForALock());
+      go.countDown();
+      matching.get(30, TimeUnit.SECONDS);
+
+      assertThat(checked.get(30, TimeUnit.SECONDS)).isZero();
+      assertThat(discrepancies(id)).isEmpty(); // no false "missing", and no event about one
+    } finally {
+      go.countDown();
+      threads.shutdownNow();
+    }
+  }
+
+  private boolean waitsForALock() {
+    return jdbc.sql("SELECT count(*) FROM pg_locks WHERE NOT granted").query(Long.class).single() > 0;
+  }
+
+  private static void await(CountDownLatch latch) {
+    try {
+      latch.await(30, TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   private void check() {
