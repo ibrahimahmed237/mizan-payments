@@ -5,7 +5,7 @@
 | Topic | Design |
 |---|---|
 | API keys | 32 random bytes, shown once when made. Stored as a SHA-256 hash. Looked up by the hash, so there is no comparison that leaks timing |
-| Making keys | A command of the service (`mizan keys create --name --scopes`), not an API. Nobody can make a key over the network |
+| Making keys | A command of the service, not an API: `keys create --name=website --scopes=payments` and `keys revoke --name=website`. Nobody can make a key over the network. The command runs against the database and stops; it starts no API and no workers |
 | Tokens | A card or wallet token lives only in memory during the create call. It is not in the database, the logs, the idempotency record or any event |
 | Logs | A filter removes `Authorization`, tokens and secrets. Bodies are not logged |
 | Webhook secrets | Compared in constant time. Each gateway has its own |
@@ -26,17 +26,23 @@ Defaults are in `application.yml`. The environment overrides them. Secrets have 
 | `MIZAN_CARD_GATEWAY_WEBHOOK_SECRET` | — | Checks its webhooks |
 | `MIZAN_PAY_LATER_URL`, `MIZAN_PAY_LATER_KEY`, `MIZAN_PAY_LATER_WEBHOOK_SECRET` | — | The pay-later provider |
 | `MIZAN_PUBLIC_URL` | — | Mizan's own address, for the customer's return |
-| `MIZAN_RETURN_URL_PREFIXES` | — | Allowed starts of `return_url` |
+| `MIZAN_PORT` | 8080 | The port of the API |
+| `MIZAN_RETURN_URL_PREFIXES` | — | Allowed starts of `return_url`, separated by commas. A prefix must end at a border of the address: `https://store.example/orders` allows `https://store.example/orders/1` and not `https://store.example/ordersX` |
 | `MIZAN_STORE_EVENT_URL`, `MIZAN_STORE_EVENT_SECRET` | empty | Where events go. Empty: events are kept, not sent |
 | `mizan.payment.max-amount` | 10000000 | Halalas |
 | `mizan.payment.card-wait` | 30m | See [workers](workers.md#times) |
 | `mizan.payment.pay-later-wait` | 2h | |
 | `mizan.payment.hold-window` | 7d | |
 | `mizan.payment.late-capture` | `REFUND` | Or `KEEP` |
-| `mizan.operation.quiet-time` | 1m | See [payments](payments.md#when-the-result-is-not-known) |
-| `mizan.settlement.missing-after` | 3d | |
-| `mizan.fees.*` | Example values | The fee table. Set it from the contract |
+| `mizan.operation.quiet-time` | 1m | See [payments](payments.md#when-the-result-is-not-known). Must be longer than `mizan.http.timeout`, or the service does not start |
+| `mizan.operation.idempotency-keys-kept` | 30d | How long an `Idempotency-Key` is remembered |
+| `mizan.http.connect-timeout`, `mizan.http.timeout` | 2s, 10s | Time limits of a gateway call |
+| `mizan.settlement.missing-after` | 3d | How long a gateway may take to pay out a capture or take back a refund |
+| `mizan.fees.card.percent-bps`, `.fixed`, `.vat-bps` | 250, 100, 1500 | The card gateway's fee: 2.5% + 1 SAR, plus 15% VAT on the fee. Example values: set them from the contract |
+| `mizan.fees.pay-later.percent-bps`, `.fixed`, `.vat-bps` | 400, 0, 1500 | The pay-later provider's fee. Example values |
 | `mizan.workers.enabled` | true | Tests switch workers off to control time |
+| `mizan.workers.sync-every`, `mizan.workers.match-every` | 1s | The pause between two rounds of the sync worker and of the matching worker |
+| `mizan.workers.missing-check-cron` | `0 30 5 * * *` | When the daily settlement check runs, in UTC |
 
 The service refuses to start when a needed setting is missing, and says which.
 

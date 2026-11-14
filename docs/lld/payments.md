@@ -62,6 +62,12 @@ sequenceDiagram
 
 If the process dies after transaction 1, the operation is in flight with no result. The sync worker finds it and continues from "fetch".
 
+| Detail | Why |
+|---|---|
+| If the first fetch fails, capture, void and refund go on with Mizan's own totals | The gateway itself refuses a refund above what is left, so nothing can go wrong; and a gateway that cannot be asked now may still take the call |
+| After a clear "no" from the gateway, Mizan still fetches before it writes the "no" down | The money may have moved all the same, for example by an earlier call whose answer was lost. The record is the truth (rule R1) |
+| Transactions are opened through one small interface, `Transactions` | It is plain in the code where each one begins and ends, and that the call stands between two of them (rule R5) |
+
 **Locking.** Every transaction that changes a payment first locks the order (an advisory lock on the `reference`), then the payment row. One helper does both, in this order, everywhere.
 
 ## Create
@@ -119,7 +125,7 @@ One capture per payment. A partial capture releases the rest.
 | Payment | What happens |
 |---|---|
 | `AUTHORIZED` | A `CANCEL` operation: void at the gateway. Then `CANCELED` |
-| `PENDING`, waiting for the customer | `CANCELED` at once, after the fresh sync showed no money. No call is needed. If the customer pays later, that is a late capture |
+| `PENDING`, waiting for the customer | `CANCELED` at once, after the fresh sync showed no money. No call is needed, and a `CANCEL` operation is recorded as done. If the gateway could not be asked: `503 gateway_unavailable`, and nothing changes. If the customer pays later, that is a late capture |
 | `PENDING`, result unknown | `409 operation_in_progress` |
 | `CAPTURED` | `409 already_captured`: use a refund |
 | `FAILED`, `CANCELED`, `EXPIRED` | `409 not_cancelable` |
@@ -183,7 +189,9 @@ Operations Mizan starts by itself. They use the same pattern and the same rules.
 | `AUTO_VOID` | A hold appears on a dead payment, or a hold's time ran out | Voids. Tried once |
 | `AUTO_REFUND` | A late capture, and the policy is "refund" | Refunds all that is captured and not refunded. Tried once |
 
-A follow-up that fails is not repeated. The store gets the failure event, and the payment shows what is left.
+A follow-up is started in the same step of the sync worker as the look that found the reason for it. So the store sees, a moment apart, `payment.captured` and then `refund.succeeded` for a late capture.
+
+A follow-up that fails is not repeated. The store gets the failure event, and the payment shows what is left. A follow-up whose reason is gone by the time it starts (the money went back in another way) is dropped and not counted as started.
 
 ## Races
 

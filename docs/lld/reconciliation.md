@@ -40,13 +40,26 @@ The file is read one line at a time. It is refused as a whole, and nothing is sa
 | The sum of `net` is not `total_net` | `payout_total_mismatch` |
 | The same `payout_id` was imported with other content | `409 payout_exists` |
 
-The same file again (same `payout_id`, same hash) is answered with the first import. Nothing happens twice.
+The same file again (same `payout_id`, same hash) is answered with the first import: `200` and the header `Idempotent-Replay: true`. Nothing happens twice.
+
+`POST /v1/settlements` takes the file itself as the body, as text, up to 50 MB. The answer is the file and how far its matching has come:
+
+```json
+201 Created
+
+{ "id": "...", "gateway": "CARD_GATEWAY", "payout_id": "po_card_2026-11-14", "payout_date": "2026-11-14",
+  "total_net": 28909, "line_count": 3,
+  "lines": { "new": 3, "needs_sync": 0, "matched": 0, "suspense": 0, "accepted": 0 },
+  "complete": false, "created_at": "..." }
+```
+
+The import only saves. Matching is the matching worker's job; `GET /v1/settlements/{id}` shows its progress, and `complete` turns true when no line waits.
 
 A refused file is the gateway's mistake or a broken upload. Mizan posts nothing from a file it cannot trust as a whole.
 
 ## Step 2 — match each line
 
-The matching worker takes lines in file order.
+The matching worker takes lines in file order, with the same lease as the sync worker: a line it took is left alone for 30 seconds, and a worker that dies in the middle of a file is followed by another. Each line is matched in one transaction that locks the line, then the order and the payment.
 
 ```mermaid
 flowchart TB
@@ -70,7 +83,9 @@ flowchart TB
 
 A line that fits but leaves part of the payment unsettled is fine: the rest is expected in a later file, and the daily check watches it.
 
-The sync before giving up is rule R1 at work. It finds a capture Mizan lost and a refund made in the gateway's dashboard. The sync is a gateway call, so it runs outside the transaction (rule R5): the line is marked `NEEDS_SYNC`, the payment is synced, and the line is tried once more.
+**Seen before** is decided by the order the lines were written in, across files: a line is a duplicate when an earlier line has the same gateway and transaction id. So the answer is the same whatever order the workers take the lines in.
+
+The sync before giving up is rule R1 at work. It finds a capture Mizan lost and a refund made in the gateway's dashboard. The sync is a gateway call, so it runs outside the transaction (rule R5): the line is marked `NEEDS_SYNC`, the payment is synced, and the line is tried once more. A sync that only looks starts no follow-up; a late capture found this way is returned by the sync worker a moment later.
 
 | The line does not fit, after the sync | Discrepancy |
 |---|---|
@@ -80,7 +95,15 @@ The sync before giving up is rule R1 at work. It finds a capture Mizan lost and 
 
 A line with a discrepancy is still money that reached the bank. Its net amount is posted to `suspense` (rule R7) and a discrepancy is opened with that amount.
 
-If the gateway cannot be reached for the sync, the line waits as `NEEDS_SYNC` and is tried again later. The file's progress shows it.
+If the gateway cannot be reached for the sync, the line waits as `NEEDS_SYNC` and is tried again 30 seconds later. The file's progress shows it.
+
+| Line status | Meaning |
+|---|---|
+| `NEW` | Not matched yet |
+| `NEEDS_SYNC` | It did not fit; its payment is synced before the last try |
+| `MATCHED` | Settled: the payment's settled totals and the ledger show it |
+| `SUSPENSE` | It did not fit. Its net amount is in suspense and a discrepancy is open |
+| `ACCEPTED` | It did not fit, and finance accepted the difference |
 
 ### Fees
 
@@ -93,8 +116,10 @@ fee  = base + round_half_up(base × VAT)
 
 | Setting | Meaning |
 |---|---|
-| `percent` (in hundredths of a percent), `fixed` (halalas) | Per method and card scheme, from the store's contract with the gateway |
+| `percent` (in hundredths of a percent), `fixed` (halalas) | Per gateway, from the store's contract ([settings](running.md#configuration)). A table per card scheme is left for later: one rule per gateway is enough to find a wrong fee |
 | `VAT` | 15% on the fee |
+
+A refund line is expected to cost nothing. A gateway that keeps or returns a fee on refunds shows up as `FEE_MISMATCH` until the table says otherwise.
 
 If the line's fee differs: the line is posted with the **real** fee, and a `FEE_MISMATCH` discrepancy records expected and actual. No money goes to suspense: the money is explained, only its price is not.
 
@@ -107,7 +132,7 @@ Once a day, and after each file:
 | A payment with `capturedAmount − settledCaptured > 0`, captured more than N days ago (default 3) | `MISSING_FROM_SETTLEMENT`, with the amount |
 | The same for refunds | `MISSING_FROM_SETTLEMENT` |
 
-One open discrepancy of this type per payment. It closes by itself (`SETTLED_LATER`) when a later file settles the rest.
+One open discrepancy of this type per payment, with the missing amount as `expected`. It closes by itself (`SETTLED_LATER`) when a later line settles the rest, or at the next check that finds nothing missing.
 
 ## Discrepancies
 
@@ -123,8 +148,10 @@ One open discrepancy of this type per payment. It closes by itself (`SETTLED_LAT
 
 | Action | Who | Does |
 |---|---|---|
-| `POST /v1/discrepancies/{id}/retry` | Finance | Syncs the payment and matches the line again. If it fits now: entry `REMATCH`, resolution `REMATCHED` |
-| `POST /v1/discrepancies/{id}/accept` with a note | Finance | Entry `ACCEPT`: the money leaves `suspense` for `adjustments`. Resolution `ACCEPTED` |
+| `POST /v1/discrepancies/{id}/retry` | Finance | Syncs the payment and matches the line again. If it fits now: entry `REMATCH`, resolution `REMATCHED`. If not: `409 still_unmatched`, and nothing changes. Only for `UNKNOWN_PAYMENT`, `NOT_CAPTURED_HERE`, `AMOUNT_MISMATCH` and `UNKNOWN_REFUND`; any other type is `409 not_retryable` |
+| `POST /v1/discrepancies/{id}/accept` with `{"note": "..."}` | Finance | Entry `ACCEPT`: the money leaves `suspense` for `adjustments`. Resolution `ACCEPTED`; the line becomes `ACCEPTED`. A discrepancy that holds no money is closed with no entry. The note is needed: 1 to 500 characters (`422 note_required`) |
+
+A discrepancy that is resolved already: `409 already_resolved`.
 
 Two more types come from outside reconciliation and are kept in the same list, with no money: `AMOUNT_CONFLICT` (from [sync](sync.md#anomalies)) and `UNKNOWN_PAYMENT_EVENT` (from a [webhook](workers.md#a-webhook-comes-in)). One open discrepancy of a type per payment.
 
@@ -154,6 +181,7 @@ The simulator can break its own settlement file. The proof run plants these and 
 | Parser tests | Each refusal of step 1; a large file is read as a stream |
 | Matching tests (pure, in `mizan-core`) | Each branch of the flow, each discrepancy type |
 | Property test: any payments and any file made from them, lines in any order | After matching: `bank` = the sum of `net`; I1 to I4 of the [ledger](ledger.md#what-must-always-be-true) hold |
-| Import tests with the database | The same file twice; a crash in the middle of matching continues; two workers |
-| Fault tests | Each row of the settlement faults table |
+| Import and matching tests with the database (`ReconciliationIT`, `MatchingIT`) | The same file twice; another file with the same payout; a crash in the middle of matching continues; two workers settle each line once |
+| Fault tests | Each row of the settlement faults table, with the simulator's real files |
 | Discrepancy tests | Retry, accept, closing by itself; who may do what |
+| The books after every test | I1 to I4, and the bank holds exactly the net of the handled lines |

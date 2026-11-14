@@ -61,7 +61,7 @@ flowchart LR
 | Domain | the `mizan-core` module | The payment, sync, ledger rules, fees, matching | nothing but the JDK |
 
 - Put a business rule in the domain and test it there first.
-- A use case is one class with one public method. It is the only place that opens a transaction. From Spring it may use only `@Service` and `@Transactional`.
+- A use case that changes something is one class with one public method, `handle`. It is the only place that opens a transaction, and it does so through the `Transactions` port, so the code shows where each transaction begins and ends. A gateway call is never inside one. From Spring a use case may use only `@Service`.
 - An adapter never holds a business rule. It translates.
 - Architecture tests (ArchUnit) enforce these rules.
 

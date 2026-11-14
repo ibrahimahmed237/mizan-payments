@@ -10,7 +10,7 @@ decide(payment, operation in flight or none, snapshot, context, now) → decisio
 
 The caller fetches the snapshot, locks the payment, calls `decide`, and saves the decision in one transaction.
 
-The **context** is the little that `decide` cannot see in the payment: the late-capture policy, the hold window, whether the gateway captures by itself, and whether another payment of the same order already holds or has money.
+The **context** is the little that `decide` cannot see in the payment: the late-capture policy, the hold window, and whether another payment of the same order already holds or has money.
 
 ## The snapshot
 
@@ -104,12 +104,13 @@ Only when `payment.captured = 0` and the snapshot's status is not `PAID`. Old st
 
 | Payment ↓ / Snapshot → | `INITIATED` | `AUTHORIZED` | `FAILED` | `VOIDED` | `EXPIRED` |
 |---|---|---|---|---|---|
-| `PENDING` | Keep. Save `actionUrl` | → `AUTHORIZED`, `CancelSiblings` | → `FAILED` | → `CANCELED` | → `EXPIRED` |
+| `PENDING` | Keep. Save `actionUrl`, if the record has one | → `AUTHORIZED`, `CancelSiblings` | → `FAILED` | → `CANCELED` | → `EXPIRED` |
 | `AUTHORIZED` | (old, ignored) | Keep | → `FAILED` (the gateway withdrew the hold) | → `CANCELED` | → `EXPIRED` |
 | `FAILED`, `CANCELED`, `EXPIRED` | Keep | Keep. **Late hold:** `FollowUp(AUTO_VOID)` | Keep | Keep | Keep |
 
 - Every change of state has a `Notify`.
 - When a payment becomes `AUTHORIZED`, the hold's end is set: `now + hold window`. If the store asked for automatic capture and the gateway does not capture by itself (pay later), `FollowUp(AUTO_CAPTURE)` is added.
+- A record without an address for the customer does not take a saved address away. The pay-later provider gives the address only in the answer to the create call.
 - `NOT_FOUND` changes nothing here. It matters only for a `CREATE` in flight ([payments](payments.md#when-the-result-is-not-known)).
 
 ### Step 5 — close the operation in flight, if the snapshot settles it

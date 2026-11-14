@@ -22,6 +22,18 @@ Every call returns one of three results. There is no fourth.
 
 A response Mizan cannot read is `Unknown`, never `Done` or `Refused`: guessing is how money is lost.
 
+| The gateway answers | Result |
+|---|---|
+| `2xx` with this payment's record | `Done` |
+| `2xx` with anything else | `Unknown` |
+| `404` to a fetch | `Done`, with a `NOT_FOUND` record |
+| `400`, `402`, `404`, `409`, `422` and other `4xx` to an operation | `Refused` |
+| `401`, `403` | `Unknown`. Mizan's own key was refused. That says nothing about the payment |
+| `408`, `429` | `Unknown`. The gateway did not look at the request |
+| `5xx`, a redirect, no answer in time, a broken connection | `Unknown` |
+
+A card that the bank declines is not `Refused`. The gateway made the payment and answers with its record: `Done`, with status `FAILED`.
+
 | What a gateway can do | Card gateway | Pay later |
 |---|---|---|
 | Caller chooses the payment id | Yes | No |
@@ -48,13 +60,19 @@ Each adapter turns the gateway's words into the [snapshot](sync.md#the-snapshot)
 | Pay-later provider says | Snapshot |
 |---|---|
 | `CREATED` | `INITIATED`, with the checkout URL |
-| `AUTHORIZED` | `AUTHORIZED` |
-| `CLOSED`, something captured | `PAID` |
+| `AUTHORIZED`, nothing captured | `AUTHORIZED` |
+| `AUTHORIZED` or `CLOSED`, something captured | `PAID`, with the sums of its captures and refunds |
 | `CLOSED`, nothing captured | `VOIDED` |
 | `REJECTED` | `FAILED` |
 | `EXPIRED` | `EXPIRED` |
 
-An adapter checks `0 ≤ refunded ≤ captured ≤ amount`. A record that breaks it is `Unknown`.
+An adapter is strict. A record is `Unknown`, and changes nothing, when:
+
+- it breaks `0 ≤ refunded ≤ captured ≤ amount`;
+- its status is one Mizan does not know;
+- it shows captured money in a status that means "no money" (for example `failed` with something captured);
+- it is about another payment than the one asked for;
+- an amount is not in the gateway's own form: whole halalas for cards, riyals as text for pay later. A pay-later amount sent as a number is refused, because `150` could mean riyals or halalas.
 
 Every call has a connect timeout of 2 seconds and a total timeout of 10 seconds. The adapters do not retry: sending again is a decision of the [operation rules](payments.md#when-the-result-is-not-known), not of an HTTP client.
 
