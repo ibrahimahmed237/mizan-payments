@@ -15,7 +15,15 @@ import dev.mizan.app.support.StoreReceiver;
 import dev.mizan.core.payment.Gateway;
 import dev.mizan.simulator.Call;
 import dev.mizan.simulator.Fault;
+import dev.mizan.simulator.FileFault;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -23,6 +31,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.web.server.servlet.context.ServletWebServerApplicationContext;
@@ -67,6 +76,28 @@ class OperationsIT extends IntegrationTest {
 
     assertThat(refused.status()).isEqualTo(413);
     assertThat(refused.code()).isEqualTo("body_too_large");
+  }
+
+  @Test
+  void a_body_sent_in_pieces_is_held_to_the_same_limit() {
+    // A body sent in pieces (chunked) does not say its size, so the size cannot be checked before it is read.
+    HttpClient http = HttpClient.newHttpClient();
+    Function<String, Integer> sendInPieces = body -> {
+      HttpRequest request = HttpRequest.newBuilder(URI.create(world.baseUrl + "/v1/payments"))
+          .header("Authorization", "Bearer " + world.paymentsKey)
+          .header("Idempotency-Key", UUID.randomUUID().toString())
+          .header("Content-Type", "application/json")
+          .POST(HttpRequest.BodyPublishers.ofInputStream(() -> new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))))
+          .build();
+      try {
+        return http.send(request, HttpResponse.BodyHandlers.discarding()).statusCode();
+      } catch (IOException | InterruptedException e) {
+        throw new IllegalStateException(e);
+      }
+    };
+
+    assertThat(sendInPieces.apply("{\"description\":\"" + "x".repeat(70_000) + "\"}")).isEqualTo(413);
+    assertThat(sendInPieces.apply("{}")).as("a small one is read as usual, and found incomplete").isEqualTo(422);
   }
 
   // ---------------------------------------------------------------- logs
