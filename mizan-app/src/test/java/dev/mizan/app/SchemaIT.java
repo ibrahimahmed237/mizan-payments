@@ -163,7 +163,8 @@ class SchemaIT extends IntegrationTest {
     refused("append-only", () -> jdbc.sql("UPDATE ledger_postings SET amount = 1 WHERE entry_id = ?").param(entry).update());
     refused("append-only", () -> jdbc.sql("DELETE FROM ledger_postings WHERE entry_id = ?").param(entry).update());
     refused("append-only", () -> jdbc.sql("TRUNCATE ledger_postings").update());
-    refused("append-only", () -> jdbc.sql("TRUNCATE ledger_entries CASCADE").update());
+    refused("append-only", () -> jdbc.sql("TRUNCATE ledger_entries CASCADE").update()); // the postings go with it, and are refused
+    refused("ledger_postings", () -> jdbc.sql("TRUNCATE ledger_entries").update()); // without CASCADE, the foreign key refuses it
   }
 
   @Test

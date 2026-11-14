@@ -48,7 +48,7 @@ public class ApiKeyService {
     return keys.revoke(name, clock.instant());
   }
 
-  /** The caller behind a key, if the key is known. A revoked key is known but allows nothing. */
+  /** The caller behind a key, if the key is known. A revoked key is still found: the caller checks {@code revokedAt}. */
   public Optional<ApiKey> find(String key) {
     return keys.findByHash(hash(key));
   }

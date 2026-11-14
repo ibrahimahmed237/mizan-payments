@@ -28,12 +28,6 @@ public class MatchLine {
   /** How long the matching worker leaves a line alone that it took, and waits before it tries a failed sync again. */
   public static final Duration LEASE = Duration.ofSeconds(30);
 
-  /** What one try came to. {@code paymentId} is set when the line needs its payment synced first. */
-  private record Try(boolean needsSync, UUID paymentId) {
-
-    static final Try DONE = new Try(false, null);
-  }
-
   private final Payments payments;
   private final Settlements settlements;
   private final SettlementWriter writer;
@@ -52,26 +46,26 @@ public class MatchLine {
   }
 
   public void handle(UUID lineId) {
-    Try first = transactions.run(() -> attempt(lineId));
-    if (!first.needsSync()) {
+    UUID toSync = transactions.run(() -> attempt(lineId));
+    if (toSync == null) {
       return;
     }
-    boolean fetched = first.paymentId() != null && sync.handle(first.paymentId()).fetched();
-    if (first.paymentId() != null && !fetched) {
+    if (!sync.handle(toSync).fetched()) {
       transactions.run(() -> settlements.retryAt(lineId, clock.instant().plus(LEASE))); // the gateway cannot be asked now
       return;
     }
     transactions.run(() -> {
       settlements.synced(lineId);
-      return attempt(lineId);
+      return attempt(lineId); // a synced line is not sent to sync again: it matches now, or it is a discrepancy
     });
   }
 
-  private Try attempt(UUID lineId) {
+  /** @return the payment to sync before the line is tried once more, or null when the line is handled */
+  private UUID attempt(UUID lineId) {
     Instant now = clock.instant();
     LineRecord line = settlements.lockLine(lineId).orElseThrow();
     if (!line.status().waiting()) {
-      return Try.DONE; // handled already, by another worker
+      return null; // handled already, by another worker
     }
     // The line first, then the order and the payment: the same order everywhere.
     Optional<PaymentRecord> payment = payments.findByGatewayId(line.gateway(), line.line().gatewayPaymentId())
@@ -85,10 +79,10 @@ public class MatchLine {
       case MatchOutcome.NeedsSync needsSync -> {
         UUID paymentId = payment.orElseThrow().id();
         settlements.needsSync(lineId, paymentId, now);
-        return new Try(true, paymentId);
+        return paymentId;
       }
       case MatchOutcome.Mismatch mismatch -> writer.mismatch(line, payment.orElse(null), mismatch.type(), now);
     }
-    return Try.DONE;
+    return null;
   }
 }

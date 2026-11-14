@@ -104,8 +104,7 @@ class CrashIT extends IntegrationTest {
     String id = createCommitted(newOrder(), Method.PAY_LATER); // no id at the provider: nothing to ask about
 
     advance(QUIET.minusSeconds(1));
-    round();
-    assertThat(payment(id).text("status")).isEqualTo("PENDING");
+    assertThat(sync(id).text("status")).isEqualTo("PENDING"); // a step now decides nothing: the call may be on its way
     assertThat(time(id, "next_sync_at")).isEqualTo(now().plusSeconds(1));
     advance(Duration.ofSeconds(1));
     round();

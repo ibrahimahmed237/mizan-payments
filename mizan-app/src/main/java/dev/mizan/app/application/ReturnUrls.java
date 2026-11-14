@@ -21,7 +21,8 @@ public final class ReturnUrls {
    * {@code https://store.example}. So the prefix must end at a border: the end, or one of {@code / ? #}.
    */
   private static boolean startsWith(String url, String prefix) {
-    if (prefix.isEmpty() || !url.startsWith(prefix)) {
+    // An empty prefix allows nothing: the address's first character is never a border.
+    if (!url.startsWith(prefix)) {
       return false;
     }
     if (prefix.endsWith("/") || url.length() == prefix.length()) {

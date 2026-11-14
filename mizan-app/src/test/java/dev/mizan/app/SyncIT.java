@@ -61,10 +61,11 @@ class SyncIT extends IntegrationTest {
     world.simulator.stick(order, Fault.AMOUNT_CHANGED); // the gateway now says "paid", but for 151.00
 
     Answer synced = sync(id);
-    sync(id);
+    Answer again = sync(id);
 
     // "Paid" for another amount is not this payment's money. A person must look.
     assertThat(synced.text("status")).isEqualTo("PENDING");
+    assertThat(again.status()).isEqualTo(200); // the second look finds the discrepancy open and opens none
     assertThat(entries(id)).isEmpty();
     assertThat(discrepancies(id)).containsExactly("AMOUNT_CONFLICT OPEN 15000 15100 0"); // one, however often Mizan looks
     assertThat(events(id)).containsExactly("discrepancy.opened");

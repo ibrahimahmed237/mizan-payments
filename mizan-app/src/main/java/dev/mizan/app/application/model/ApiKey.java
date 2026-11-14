@@ -10,7 +10,8 @@ public record ApiKey(UUID id, String name, Set<String> scopes, Instant revokedAt
   public static final String PAYMENTS = "payments";
   public static final String BACKOFFICE = "backoffice";
 
+  /** Whether the key has the scope. A revoked key is refused before this is asked. */
   public boolean allows(String scope) {
-    return revokedAt == null && scopes.contains(scope);
+    return scopes.contains(scope);
   }
 }

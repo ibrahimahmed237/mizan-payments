@@ -129,8 +129,7 @@ CREATE TRIGGER ledger_entries_append_only BEFORE UPDATE OR DELETE ON ledger_entr
   FOR EACH ROW EXECUTE FUNCTION ledger_is_append_only();
 CREATE TRIGGER ledger_postings_append_only BEFORE UPDATE OR DELETE ON ledger_postings
   FOR EACH ROW EXECUTE FUNCTION ledger_is_append_only();
-CREATE TRIGGER ledger_entries_no_truncate BEFORE TRUNCATE ON ledger_entries
-  FOR EACH STATEMENT EXECUTE FUNCTION ledger_is_append_only();
+-- Emptying ledger_entries means emptying ledger_postings too (its foreign key), and that is refused here.
 CREATE TRIGGER ledger_postings_no_truncate BEFORE TRUNCATE ON ledger_postings
   FOR EACH STATEMENT EXECUTE FUNCTION ledger_is_append_only();
 
