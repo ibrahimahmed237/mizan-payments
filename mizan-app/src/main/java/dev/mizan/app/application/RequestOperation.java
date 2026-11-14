@@ -129,7 +129,8 @@ public class RequestOperation {
 
   /** The key was used before: by this same request, or by another one. */
   private OperationRecord replay(IdempotencyRecord first, Command command) {
-    if (!first.requestHash().equals(command.requestHash()) || first.operationId() == null) {
+    // The hash covers the path, so the key of a payment never has an operation's hash.
+    if (!first.requestHash().equals(command.requestHash())) {
       throw Problem.invalid("idempotency_key_reused", "This Idempotency-Key was used for another request.");
     }
     return operations.find(first.operationId()).orElseThrow();

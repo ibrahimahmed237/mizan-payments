@@ -88,8 +88,8 @@ public class PaymentWriter {
 
   /** Applies the gateway's record of a payment: asks the rules, then writes their decision. */
   public Saved sync(PaymentRecord locked, OperationRecord inFlight, Snapshot snapshot, Instant now) {
-    boolean otherMoney = payments.ofOrder(locked.reference()).stream()
-        .anyMatch(other -> !other.id().equals(locked.id()) && CommandRules.hasMoney(other.payment()));
+    // Sync reads this only for a late capture, which comes to a payment that had ended and so holds no money itself.
+    boolean otherMoney = payments.ofOrder(locked.reference()).stream().anyMatch(other -> CommandRules.hasMoney(other.payment()));
     var context = new SyncContext(settings.lateCapture(), settings.holdWindow(), otherMoney);
     Decision decision = Sync.decide(locked.payment(), inFlight == null ? null : inFlight.forRules(), snapshot, context, now);
     return apply(locked, inFlight, decision, snapshot, now);
@@ -191,9 +191,12 @@ public class PaymentWriter {
 
   /** This payment holds or has the order's money: the order's other unfinished payments end here. */
   private void cancelSiblings(PaymentRecord winner, Instant now) {
-    for (PaymentRecord sibling : payments.ofOrder(winner.reference())) {
-      if (!sibling.id().equals(winner.id()) && sibling.payment().status() == PaymentStatus.PENDING) {
-        // The sibling's operation in flight, if any, stays in flight: its result is still worth knowing.
+    for (PaymentRecord listed : payments.ofOrder(winner.reference())) {
+      if (!listed.id().equals(winner.id()) && listed.payment().status() == PaymentStatus.PENDING) {
+        // Its row is locked too, like any payment that changes. The order's lock is held already, so its state is
+        // as listed; the row lock adds a fresh "look requested" flag, and makes a webhook for it wait for this save.
+        PaymentRecord sibling = payments.lock(listed.id()).orElseThrow();
+        // Its operation in flight, if any, stays in flight: its result is still worth knowing.
         apply(sibling, operations.inFlight(sibling.id()).orElse(null), CommandRules.cancelHere(sibling.payment()), null, now);
       }
     }

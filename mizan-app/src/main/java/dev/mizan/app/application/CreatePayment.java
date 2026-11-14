@@ -147,7 +147,8 @@ public class CreatePayment {
   /** The key was used before: by this same request, or by another one. */
   private Started replay(Command command) {
     IdempotencyRecord first = keys.find(command.idempotencyKey()).orElseThrow();
-    if (!first.requestHash().equals(command.requestHash()) || first.paymentId() == null) {
+    // The hash covers the path, so the key of a capture, cancel or refund never has a payment's hash.
+    if (!first.requestHash().equals(command.requestHash())) {
       throw Problem.invalid("idempotency_key_reused", "This Idempotency-Key was used for another request.");
     }
     PaymentRecord payment = payments.find(first.paymentId()).orElseThrow();

@@ -102,8 +102,10 @@ public class AdvancePayment {
     OperationRecord operation = state.inFlight();
     Payment payment = state.payment().payment();
     if (look == Look.NOTHING_TO_ASK) {
-      // A create with no id to ask about: its call left Mizan and no answer was written down.
-      if (!now.isBefore(operation.lastAttemptAt().plus(settings.quietTime()))) {
+      // A create with no id to ask about: its call left Mizan and no answer was written down. If a webhook gave the
+      // id while this step ran, nothing is decided now: the next look can ask.
+      boolean stillNoId = state.payment().gatewayPaymentId() == null;
+      if (stillNoId && !now.isBefore(operation.lastAttemptAt().plus(settings.quietTime()))) {
         writer.apply(state.payment(), operation, OperationRules.unreachable(payment, operation.forRules()), null, now);
       }
       return Send.NOTHING;
