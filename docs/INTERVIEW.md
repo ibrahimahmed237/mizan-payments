@@ -56,7 +56,7 @@ The hard part is not the happy path. It is the boring failures: a call that time
 |---|---|---|
 | The rules | Unit and property tests of `mizan-core`, with generated cases | 334 tests, 15,000 generated cases, 99% of lines covered |
 | The simulator | Its own tests | 73 tests |
-| The service | Integration tests with PostgreSQL and the simulator: each flow, each fault, each race | 473 tests, 332 of them against PostgreSQL and the simulator; 96% of lines covered |
+| The service | Integration tests with PostgreSQL and the simulator: each flow, each fault, each race | 479 tests, 332 of them against PostgreSQL and the simulator; 96% of lines covered |
 | Deliberate bugs | A bug is planted, the tests must fail, the bug is removed | 456 planted. 441 caught. 14 showed code that did nothing, which was deleted. 1 changed nothing |
 | The proof run | A seeded plan of payments and faults. At the end Mizan's books equal the simulator's book | 150 orders with every build. Two runs of 10,000 orders with over 6,000 faults each, one of them with the workers' rounds side by side: every check passed |
 | A real gateway's test mode | Needs test keys | Not run yet: assumptions A1 to A6 of the [design](DESIGN.md#15-assumptions-to-confirm) stay open |

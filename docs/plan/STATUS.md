@@ -31,7 +31,7 @@ See the milestones in [PLAN.md](PLAN.md).
 | Layer | State |
 |---|---|
 | 1. The rules, with generated cases | Passing: 334 tests in `mizan-core`, properties P1 to P7 with 15,000 generated cases. 99% of lines covered |
-| 2. The service against the simulator | Passing: 473 tests in `mizan-app` (332 of them against PostgreSQL and the simulator; 2 skipped: the real gateway check), and 73 in `mizan-simulator`. 96% of the service's lines covered |
+| 2. The service against the simulator | Passing: 479 tests in `mizan-app` (332 of them against PostgreSQL and the simulator; 2 skipped: the real gateway check), and 73 in `mizan-simulator`. 96% of the service's lines covered |
 | 3. The proof run | Passing. 150 orders with every build; longer runs of [2,000](../proof/run-2000-seed-7.md) and [10,000](../proof/run-10000-seed-11.md) orders, and one of [10,000 with the workers' rounds side by side](../proof/run-10000-seed-23-side-by-side.md): all checks passed |
 | 4. A real gateway's test mode | Built (`RealGatewayTest`), skipped without test keys. Not run yet |
 
