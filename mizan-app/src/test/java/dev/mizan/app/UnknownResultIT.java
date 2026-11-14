@@ -2,6 +2,10 @@ package dev.mizan.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.mizan.app.application.OperationRunner;
+import dev.mizan.app.application.model.OperationRecord;
+import dev.mizan.app.application.port.Operations;
+import dev.mizan.app.application.port.Payments;
 import dev.mizan.app.support.Api.Answer;
 import dev.mizan.app.support.IntegrationTest;
 import dev.mizan.core.payment.GatewayStatus;
@@ -162,6 +166,33 @@ class UnknownResultIT extends IntegrationTest {
     assertThat(atGateway(id).captured()).isEqualTo(15_000);
     assertThat(atGateway(id).charges()).isEqualTo(1);
     assertThat(entries(id)).containsExactly("CAPTURE 15000");
+  }
+
+  @Test
+  void a_no_to_the_second_call_is_not_believed_while_the_gateway_cannot_be_asked() {
+    String order = newOrder();
+    String id = authorized(order, 15_000);
+    UUID paymentId = UUID.fromString(id);
+    world.simulator.plan(order, Call.CAPTURE, Fault.VERY_SLOW_APPLY); // the first call lands two minutes later
+    api.post("/v1/payments/" + id + "/capture", null);
+    advance(QUIET.multipliedBy(2)); // it has landed now: the money is taken, and Mizan does not know
+    var operations = world.app.getBean(Operations.class);
+    var runner = world.app.getBean(OperationRunner.class);
+    OperationRecord first = operations.inFlight(paymentId).orElseThrow();
+
+    // The worker sends the capture once more: its look came just before the first call landed. The gateway says
+    // "no" (it is captured already), and then cannot be asked.
+    operations.attempt(first.id(), 2, now());
+    world.simulator.fetchDown(order, 1);
+    OperationRecord second = operations.inFlight(paymentId).orElseThrow();
+    runner.finish(paymentId, second.id(), runner.send(world.app.getBean(Payments.class).find(paymentId).orElseThrow(), second));
+
+    // The "no" may be the first call's doing, so it is not written down.
+    assertThat(results(id)).containsExactly("CREATE SUCCEEDED -", "CAPTURE IN_FLIGHT -");
+    assertThat(sync(id).text("status")).isEqualTo("CAPTURED"); // the gateway is back: the capture did happen
+    assertThat(results(id)).containsExactly("CREATE SUCCEEDED -", "CAPTURE SUCCEEDED -");
+    assertThat(events(id)).containsExactly("payment.authorized", "payment.captured"); // and no "capture.failed"
+    assertThat(atGateway(id).charges()).isEqualTo(1);
   }
 
   @Test

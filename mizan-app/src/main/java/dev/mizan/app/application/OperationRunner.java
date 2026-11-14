@@ -69,8 +69,10 @@ public class OperationRunner {
    * Step 3: what came of the call.
    *
    * <p>An answer with a record is applied. After a "no" or no answer at all, the gateway is asked first: the money
-   * may have moved anyway, and the record is the truth (rule R1). Only then is a clear "no" written down. With no
-   * record and no clear "no", the operation stays in flight and the sync worker goes on from here.
+   * may have moved anyway, and the record is the truth (rule R1). Only then is a clear "no" written down. If the
+   * gateway cannot be asked, a "no" to the operation's first call is still written down: nothing was sent before
+   * it. A "no" to a repeated call is not. With no record and no clear "no", the operation stays in flight and the
+   * sync worker goes on from here.
    */
   public Saved finish(UUID paymentId, UUID operationId, GatewayResult answer) {
     String givenId = answer instanceof GatewayResult.Done done ? done.gatewayPaymentId() : null;
@@ -90,6 +92,11 @@ public class OperationRunner {
         return saved; // the record settled it, here or in a sync that ran meanwhile
       }
       if (answer instanceof GatewayResult.Refused refused) {
+        if (record == null && open.attempts() > 1) {
+          // A "no" to a call that was sent again may only mean that the first call landed after all. Without the
+          // gateway's record nobody can tell, so nothing is written: the sync worker decides on fresh facts.
+          return saved;
+        }
         Decision no = OperationRules.refused(saved.payment().payment(), open.forRules(), refused.code(), refused.message());
         return writer.apply(saved.payment(), open, no, null, now);
       }
