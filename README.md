@@ -6,6 +6,8 @@
 
 > **Status:** built, tested and reviewed. Not yet run against a real gateway's test mode, which needs test keys: until then, the [assumptions](docs/DESIGN.md#15-assumptions-to-confirm) about the gateways stay open. See [STATUS.md](docs/plan/STATUS.md).
 
+![One payment through Mizan: the gateway charges the card, its answer is lost, Mizan asks again by its own id, and records the payment once](docs/media/payment-flow.svg)
+
 ## The idea in one minute
 
 Payments go wrong in boring ways. A call times out after the card was charged. A webhook comes twice, or never. The customer pays in two tabs. The gateway pays out a little less than expected and nobody notices.
@@ -21,6 +23,20 @@ Mizan is built on seven rules that make these cases safe:
 | R5 | No gateway call inside a database transaction |
 | R6 | Every money fact is posted to the ledger once, with the fact |
 | R7 | Money that cannot be explained goes to suspense, and stays visible |
+
+Where Mizan sits:
+
+```mermaid
+flowchart LR
+  Customer([Customer]) -->|pays on a hosted page| GW
+  Store([Store backend]) -->|create, capture, refund, read| Mizan
+  Mizan -->|signed events| Store
+  Finance([Finance team]) -->|settlement files, reports| Mizan
+  Mizan -->|create, fetch, capture, void, refund| GW[Card gateway]
+  Mizan -->|session, fetch, capture, refund| BNPL[Pay-later provider]
+  GW -->|webhooks| Mizan
+  BNPL -->|webhooks| Mizan
+```
 
 The rules are not only claimed. A simulator breaks things on purpose, and a [proof run](docs/proof/run-10000-seed-11.md) of 10,000 orders with faults checks the result against the simulator's own record. Every part was also tested with deliberate bugs: a bug is planted, a test must fail.
 
