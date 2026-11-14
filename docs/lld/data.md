@@ -11,7 +11,7 @@ One PostgreSQL database. The schema is made by Flyway migrations. All access is 
 | Table | One row is | Key points |
 |---|---|---|
 | `api_keys` | A caller's key | Only the SHA-256 hash is stored. `revoked_at` |
-| `payments` | A payment | `version`; `next_sync_at` with a partial index for the worker; `sync_requested`; `sync_failures`; unique `(gateway, gateway_payment_id)` |
+| `payments` | A payment | `version`; `next_sync_at` with a partial index for the worker; `sync_requested`; `sync_failures`; unique `(gateway, gateway_payment_id)`; a partial index on the payments with money that no file has settled, for the daily check and the report |
 | `operations` | A create, capture, cancel or refund | Unique partial index: one `IN_FLIGHT` per payment. `seq` keeps the order they were written in |
 | `idempotency_keys` | A key and what it made | Primary key: the key. `request_hash`, the payment or operation id, `expires_at`. No answer is stored |
 | `gateway_events` | A webhook that came in | Unique `(gateway, event_id)`. Only the id, the type and the gateway's payment id are kept, and Mizan's payment id when one matched; not the body |

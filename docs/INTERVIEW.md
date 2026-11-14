@@ -32,6 +32,7 @@ The hard part is not the happy path. It is the boring failures: a call that time
 | A webhook comes while a sync is already on its way | That sync may carry older news. A flag (`syncRequested`) is taken down before the fetch, and raised again by the webhook, so one more sync runs. One look too many is safe; one too few is not. |
 | The customer pays the same order in two tabs | One order has one payment that counts. When a second one takes money, Mizan gives it back (void or refund) and tells the store. |
 | The bank released the hold, then the store captured | The gateway's record wins. A capture that comes after the hold ended is a *late capture*: recorded, told to the store, and (by default) returned in full, once. |
+| The gateway takes two seconds to answer. Does the worker fall behind? | It looks at 16 payments side by side (a setting), and the event sender sends 8 events side by side. This is cheap because of R5: no transaction and no database connection is held while a call waits. Each worker has its own thread, so a slow gateway does not stop matching or events. |
 | Two workers take the same payment | `FOR UPDATE SKIP LOCKED` and a lease. The second worker does not see it. If the first one dies, the lease ends and another takes it. |
 | Mizan crashes between the call and the save | The operation is `IN_FLIGHT` in the database. The next worker finds it and finishes it from the gateway's record. |
 | The payout is short | Each line is matched to a payment, after one sync if it does not fit. A wrong amount, a line twice, a line nobody knows: each becomes a discrepancy, and its money goes to suspense. A wrong fee is posted as it is and reported. A payment that no file pays out is reported after three days. The ledger still balances. |
@@ -53,11 +54,11 @@ The hard part is not the happy path. It is the boring failures: a call that time
 
 | Layer | What | Result |
 |---|---|---|
-| The rules | Unit and property tests of `mizan-core`, with generated cases | 333 tests, 15,000 generated cases, 99% of lines covered |
+| The rules | Unit and property tests of `mizan-core`, with generated cases | 334 tests, 15,000 generated cases, 99% of lines covered |
 | The simulator | Its own tests | 73 tests |
-| The service | Integration tests with PostgreSQL and the simulator: each flow, each fault, each race | 463 tests, 324 of them against PostgreSQL and the simulator; 96% of lines covered |
-| Deliberate bugs | A bug is planted, the tests must fail, the bug is removed | 442 planted. 427 caught. 14 showed code that did nothing, which was deleted. 1 changed nothing |
-| The proof run | A seeded plan of payments and faults. At the end Mizan's books equal the simulator's book | 150 orders with every build. A run of 10,000 orders with 6,252 faults: every check passed |
+| The service | Integration tests with PostgreSQL and the simulator: each flow, each fault, each race | 473 tests, 332 of them against PostgreSQL and the simulator; 96% of lines covered |
+| Deliberate bugs | A bug is planted, the tests must fail, the bug is removed | 456 planted. 441 caught. 14 showed code that did nothing, which was deleted. 1 changed nothing |
+| The proof run | A seeded plan of payments and faults. At the end Mizan's books equal the simulator's book | 150 orders with every build. Two runs of 10,000 orders with over 6,000 faults each, one of them with the workers' rounds side by side: every check passed |
 | A real gateway's test mode | Needs test keys | Not run yet: assumptions A1 to A6 of the [design](DESIGN.md#15-assumptions-to-confirm) stay open |
 
 ## What is not done

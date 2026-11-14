@@ -240,7 +240,7 @@ Mizan-Signature: v1=5f2a...
 | No URL configured | Events are kept and marked `SKIPPED`. Nothing is sent |
 | Seen by finance | `GET /v1/events?status=&payment_id=` shows each event's status, attempts, next time and last error, but not its body. `POST /v1/events/{id}/redeliver` sends a delivered, failed or skipped event again, with the same id, from the first retry time on; a waiting one: `409 already_waiting` |
 
-The event sender takes up to 50 events at a time with a lease of ten minutes, longer than the round can take (each call to the store is cut off after 10 seconds). So two instances do not send the same event at once. If an instance dies, its events are sent when the lease ends. Delivery is still at least once: the store must ignore an event id it has seen.
+The event sender takes up to 50 events at a time and sends them side by side, 8 at a time by default (`mizan.workers.send-parallel`), so a slow store does not hold up the events behind it. Its lease is ten minutes, longer than the round can take (each call to the store is cut off after 10 seconds). So two instances do not send the same event at once. If an instance dies, its events are sent when the lease ends. Delivery is still at least once: the store must ignore an event id it has seen.
 
 The sender takes events with `FOR UPDATE SKIP LOCKED` and never holds a transaction open while it calls the store.
 

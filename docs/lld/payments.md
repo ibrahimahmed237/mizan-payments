@@ -66,6 +66,7 @@ If the process dies after transaction 1, the operation is in flight with no resu
 |---|---|
 | If the first fetch fails, capture, void and refund go on with Mizan's own totals | The gateway itself refuses a refund above what is left, so nothing can go wrong; and a gateway that cannot be asked now may still take the call |
 | After a clear "no" from the gateway, Mizan still fetches before it writes the "no" down | The money may have moved all the same, for example by an earlier call whose answer was lost. The record is the truth (rule R1) |
+| If that fetch fails too, a "no" to the operation's **first** call is written down; a "no" to a call that was **sent again** is not | Nothing was sent before a first call, so its "no" is the whole story. A "no" to the second call may only mean that the first one landed after all ("already captured"). That operation stays in flight, and the sync worker decides on fresh facts |
 | Transactions are opened through one small interface, `Transactions` | It is plain in the code where each one begins and ends, and that the call stands between two of them (rule R5) |
 
 **Locking.** Every transaction that changes a payment first locks the order (an advisory lock on the `reference`), then the payment row. One helper does both, in this order, everywhere.

@@ -70,7 +70,7 @@ The store never sees a card number. The gateway's page turns the card into a **t
 
 | Number | Value | Why it matters |
 |---|---|---|
-| Payments | 1 million a month, 50 a second at the peak | One PostgreSQL database is enough. No sharding, no queue product |
+| Payments | 1 million a month, 50 a second at the peak | One PostgreSQL database is enough. No sharding, no queue product. The workers look at payments and send events side by side, so a gateway that takes a second does not hold up the payments behind it ([workers](lld/workers.md#how-much-one-instance-can-do)) |
 | Gateway call | Usually 1 to 3 seconds; cut off after 10 | No database transaction may stay open that long (rule R5) |
 | Webhook loss | Assume some never arrive | A webhook cannot be the only way to learn a result (rule R2) |
 | Settlement file | Up to 200,000 lines | Read line by line, written in batches of 1,000, matched in batches. A file of 200,000 lines is taken in one call (tested) |
@@ -363,7 +363,7 @@ The full list is in the [API design](lld/api.md).
 
 | Topic | Design |
 |---|---|
-| Workers | Run inside the service. Each takes rows with `FOR UPDATE SKIP LOCKED`, so two instances never take the same row |
+| Workers | Run inside the service, each on a thread of its own. Each takes rows with `FOR UPDATE SKIP LOCKED` and a lease, so two instances share the work |
 | Health | Liveness and readiness endpoints |
 | Metrics | Payments by state, age of the oldest pending payment, operations in flight, events waiting, open discrepancies, suspense balance |
 | Logs | Each line of a request carries its request id. No headers, bodies, tokens or secrets. JSON lines can be switched on with Spring Boot's `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` |

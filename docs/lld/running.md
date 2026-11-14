@@ -11,7 +11,7 @@
 | Webhook secrets | Compared in constant time. Each gateway has its own |
 | The return address | `return_url` must start with a configured address. Checked when the payment is created |
 | The store's event URL | Comes from configuration, not from requests, so a caller cannot point Mizan at another server |
-| Limits | 100 requests a second per API key, with a burst of 200. Webhooks: 200 a second per gateway, burst 400. The return page: 20 a second per address, burst 40. Bodies: 64 KB, settlement files 50 MB. Limits are counted per instance, on real time. Over a limit: `429 too_many_requests` with `Retry-After`; a body that says it is too large: `413 body_too_large`, before it is read; a body sent in pieces (no size given) is read up to 64 KB, then refused the same way. A request without a valid key is refused before the API limit counts it, so a public deployment needs a load balancer with its own limit per address in front |
+| Limits | 100 requests a second per API key, with a burst of 200. Webhooks: 200 a second per gateway, burst 400. The return page: 20 a second per customer address, burst 40; behind a load balancer the address is taken from `X-Forwarded-For`, and only when the request itself comes from a private address. A webhook address that names no gateway shares one limit with all such addresses. Bodies: 64 KB, settlement files 50 MB. Limits are counted per instance, on real time. Over a limit: `429 too_many_requests` with `Retry-After`; a body that says it is too large: `413 body_too_large`, before it is read; a body sent in pieces (no size given) is read up to 64 KB, then refused the same way. A request without a valid key is refused before the API limit counts it, so a public deployment needs a load balancer with its own limit per address in front |
 | Input | Unknown JSON fields are refused. Text fields have a maximum length. Ids must be UUIDs |
 | Transport | TLS ends at the load balancer in front of Mizan. Mizan sends `Strict-Transport-Security` and no content that a browser renders |
 
@@ -44,6 +44,7 @@ Defaults are in `application.yml`. The environment overrides them. Secrets have 
 | `mizan.workers.sync-every`, `mizan.workers.match-every` | 1s | The pause between two rounds of the sync worker and of the matching worker |
 | `mizan.workers.missing-check-cron` | `0 30 5 * * *` | When the daily settlement check runs, in UTC |
 | `mizan.workers.send-every` | 1s | The pause between two rounds of the event sender |
+| `mizan.workers.sync-parallel`, `mizan.workers.send-parallel` | 16, 8 | How many payments the sync worker looks at side by side, and how many events the event sender sends side by side. From 1 to 64. See [workers](workers.md#how-much-one-instance-can-do) |
 | `mizan.workers.clean-up-cron` | `0 10 4 * * *` | When the daily clean-up runs, in UTC |
 | `mizan.limits.api-per-second`, `.api-burst` | 100, 200 | Per API key |
 | `mizan.limits.webhooks-per-second`, `.webhooks-burst` | 200, 400 | Per gateway |
@@ -68,7 +69,7 @@ Served at `/actuator/prometheus`, with health at `/actuator/health/liveness` and
 | `mizan.discrepancies.open` | Open differences | Any |
 | `mizan.ledger.suspense` | Suspense balance in halalas | Not zero |
 
-The numbers about state are read from the database each time they are scraped, so every instance shows the same.
+The numbers about state are read from the database when they are scraped, so every instance shows the same. The three about payments (by state, the oldest pending, late captures) come from one read of the payments table, kept for a second: a scrape reads that table once. `mizan.webhooks` has a row only for the two real gateways: a made-up address is answered `404` and counted nowhere.
 
 ## Running it on one machine
 

@@ -86,3 +86,5 @@ So the commits before that fix build, and pass their tests except for that race.
 ## Result
 
 The project is ready to publish. The one open item, the real gateway run, is stated in the README, the status page and the interview page.
+
+A second look afterwards asked other questions (load, outsiders, finance's daily work) and found nine more things to fix: [review 007](007-second-final-review.md).

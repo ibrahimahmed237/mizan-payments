@@ -41,7 +41,7 @@ An unknown id, and a payment made without a return address (Apple Pay), give `40
 
 ## The sync worker
 
-Every second it takes a batch of payments whose `nextSyncAt` has passed.
+Every second it takes a batch of up to 50 payments whose `nextSyncAt` has passed, and looks at them **side by side**, 16 at a time by default. A full batch is followed by the next at once.
 
 ```mermaid
 flowchart TB
@@ -51,7 +51,20 @@ flowchart TB
   T --> U[After the commit: send the call that was written down, if any, and write down what came of it]
 ```
 
-The claim in the second step is a lease. If the worker dies after it, the payment comes back after 30 seconds. Two instances never fetch the same payment at the same time, and if they did, sync is safe to repeat. A payment that a request holds right now is skipped, not waited for: it is taken in the next round.
+The claim in the second step is a lease. If the worker dies after it, the payment comes back after 30 seconds. The step renews the lease just before its fetch. Two instances rarely fetch the same payment at the same time, and when they do, sync is safe to repeat. A payment that a request holds right now is skipped, not waited for: it is taken in the next round.
+
+### How much one instance can do
+
+A step is mostly waiting for the gateway, and no transaction is open while it waits (rule R5). So steps can run side by side without holding database connections, and the payments' locks keep two steps from harming each other.
+
+| Setting | Default | What it bounds |
+|---|---|---|
+| `mizan.workers.sync-parallel` | 16 | Payments looked at side by side. Looks per second = this ÷ the gateway's answer time: 16 a second when the gateway takes a second, about 50 a second at 300 ms |
+| `mizan.workers.send-parallel` | 8 | Events sent to the store side by side |
+
+At the peak of the [design](../DESIGN.md#4-numbers-that-shape-the-design), 50 payments a second, almost every payment needs one look (its webhook asks for it). With a gateway that answers in a second, set `sync-parallel` to 64, or run a second instance: `SKIP LOCKED` shares the work between them. One at a time, as the worker first was, a slow gateway would have held up every payment behind it.
+
+Each of the five workers (sync, matching, events, the daily check, the clean-up) has a scheduler thread of its own, so one that waits does not hold up another. The matching worker handles its lines one after another: a line is one short transaction, and only a line that does not fit calls the gateway.
 
 What the step decides, on the fresh record, in this order:
 
@@ -105,5 +118,6 @@ The return page looks without the step, so it does not take the flag down. One l
 | Worker tests (`WorkerIT`, `ExpiryIT`, `FollowUpIT`, `UnknownResultIT`) | A dropped webhook is covered by the timer; a late customer becomes a late capture and is refunded; a leaving customer expires; the quiet minute; a capture sent once more, a card refund never |
 | Crash tests (`CrashIT`) | A process that dies after transaction 1, before or after its call reached the gateway |
 | Lease tests | A worker that dies after the claim; two workers at once; a payment held by a request is skipped |
+| Side-by-side test (`WorkerIT`) | With a gateway that takes 200 ms, the looks of one round overlap, and each payment is still written once. The whole suite also passes with every round run 8 at a time (`-Dmizan.test.parallel=8`) |
 | Schedule tests | Each row of the `nextSyncAt` table |
 | Timer test (`SyncWorkerIT`) | With the workers on, the timer runs rounds by itself |
