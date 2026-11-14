@@ -99,7 +99,7 @@ flowchart LR
 
 | Build | Done when |
 |---|---|
-| The file parser | Every refusal; a 200,000-line file is read as a stream |
+| The file parser | Every refusal; a 200,000-line file is taken in one call |
 | Import | The same file twice; another file with the same payout id |
 | The matching worker | Every branch; the sync before giving up; a crash in the middle continues |
 | Suspense and discrepancies | Every type; retry, accept, closing by itself |

@@ -56,7 +56,7 @@ A line that did not match posts only what reached the bank (the net). Mizan cann
 | I2 | For each payment: receivable = captured − refunded − settled capture + settled refund. It can be below zero for a while (a refund the gateway has not taken out of a payout yet) | A query used by tests and by the reconciliation report |
 | I3 | `sales` = total captured − total refunded | The same |
 | I4 | `suspense` = the sum of the net amounts of the open suspense lines | The same |
-| I5 | When every capture and refund is settled and no discrepancy is open: `gateway_receivable = 0` and `suspense = 0` | The proof run |
+| I5 | When every capture and refund is settled and no discrepancy is open: `gateway_receivable = 0` and `suspense = 0` | A clean file in the reconciliation tests: the receivable of its payments goes back to zero. The proof run plants errors on purpose, so it checks I1 to I4 instead |
 
 ## Reading
 

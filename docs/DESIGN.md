@@ -73,7 +73,7 @@ The store never sees a card number. The gateway's page turns the card into a **t
 | Payments | 1 million a month, 50 a second at the peak | One PostgreSQL database is enough. No sharding, no queue product |
 | Gateway call | Usually 1 to 3 seconds; cut off after 10 | No database transaction may stay open that long (rule R5) |
 | Webhook loss | Assume some never arrive | A webhook cannot be the only way to learn a result (rule R2) |
-| Settlement file | Up to 200,000 lines | Read as a stream, match in batches |
+| Settlement file | Up to 200,000 lines | Read line by line, written in batches of 1,000, matched in batches. A file of 200,000 lines is taken in one call (tested) |
 | Money | Whole halalas in a 64-bit integer | No rounding inside Mizan. 1 SAR = 100 halalas |
 
 ### Non-functional requirements
@@ -83,7 +83,7 @@ The store never sees a card number. The gateway's page turns the card into a **t
 | Correctness | The rules in section 5 hold under every failure the simulator can make |
 | Speed | Creating a payment costs one gateway call and two short transactions. No lock is held during a gateway call |
 | Recovery | After a crash at any line, a restart finishes or safely repeats the work. Nothing needs a person |
-| Audit | Ledger entries, gateway events and settlement lines are never changed or deleted |
+| Audit | Ledger entries are never changed or deleted (the database refuses it). A settlement line keeps the gateway's figures as they came; only its status changes. Gateway events are kept 90 days |
 | Simplicity | One service, one database, plain SQL. A new engineer can follow one payment through the code in an hour |
 
 ## 5. The seven rules
@@ -102,7 +102,7 @@ Everything else follows from these.
 
 ## 6. The parts
 
-Mizan is one service with one database. The code is in four modules.
+Mizan is one service with one database. The code is in three modules.
 
 ```mermaid
 flowchart TB
@@ -113,12 +113,9 @@ flowchart TB
   end
   core[mizan-core · the rules. Plain Java, no framework]
   sim[mizan-simulator · a fake card gateway and pay-later provider that can fail on purpose]
-  proof[mizan-proof · runs many payments with faults and checks the results]
   API --> core
   W --> core
   AD --> core
-  proof --> app
-  proof --> sim
   app -. HTTP .-> sim
 ```
 
@@ -127,9 +124,10 @@ flowchart TB
 | `mizan-core` | Money, the payment and its states, *sync*, ledger rules, fees, settlement matching | Only the JDK |
 | `mizan-app` | The API, the use cases, the database, the gateway clients, the workers | `mizan-core`, Spring Boot |
 | `mizan-simulator` | The fake gateways, their faults, their settlement files | `mizan-core` (money only) |
-| `mizan-proof` | The proof run and its report | `mizan-app`, `mizan-simulator` |
 
-Inside `mizan-app`, the layers are the same as in every service of this author: adapters → application → domain (the domain is `mizan-core`). Architecture tests enforce them.
+Inside `mizan-app`, the layers are adapters → application → domain (the domain is `mizan-core`). Architecture tests enforce them.
+
+The proof run is a test of `mizan-app` (`ProofRunIT`), not a module of its own: it needs exactly the world the other integration tests build (a database in a container, the simulator, Mizan, one clock), and a fourth module would have copied it.
 
 ## 7. A payment's life
 
@@ -352,7 +350,7 @@ The full list is in the [API design](lld/api.md).
 | Risk | Answer |
 |---|---|
 | Card data | Never enters Mizan. Tokens are used once, never stored, never logged |
-| Callers | API keys, stored as hashes, with scopes. Compared in constant time |
+| Callers | API keys with scopes, stored as hashes and looked up by the hash, so no comparison can leak timing |
 | Forged webhooks | The gateway's secret is checked. Even a forged webhook can only make Mizan ask the gateway (R2); it cannot change money |
 | Replayed webhooks | The same event id is stored once. A replay only causes another harmless sync |
 | Changed amounts | A gateway record whose amount or currency differs from the payment is never accepted as paid |
@@ -368,7 +366,7 @@ The full list is in the [API design](lld/api.md).
 | Workers | Run inside the service. Each takes rows with `FOR UPDATE SKIP LOCKED`, so two instances never take the same row |
 | Health | Liveness and readiness endpoints |
 | Metrics | Payments by state, age of the oldest pending payment, operations in flight, events waiting, open discrepancies, suspense balance |
-| Logs | Structured, with the payment id and a request id. No tokens, no secrets |
+| Logs | Each line of a request carries its request id. No headers, bodies, tokens or secrets. JSON lines can be switched on with Spring Boot's `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` |
 | Configuration | One file with defaults; the environment overrides |
 
 ## 14. Testing and proof

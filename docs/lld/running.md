@@ -7,11 +7,11 @@
 | API keys | 32 random bytes, shown once when made. Stored as a SHA-256 hash. Looked up by the hash, so there is no comparison that leaks timing |
 | Making keys | A command of the service, not an API: `keys create --name=website --scopes=payments` and `keys revoke --name=website`. Nobody can make a key over the network. The command runs against the database and stops; it starts no API and no workers |
 | Tokens | A card or wallet token lives only in memory during the create call. It is not in the database, the logs, the idempotency record or any event |
-| Logs | A filter removes `Authorization`, tokens and secrets. Bodies are not logged |
+| Logs | Mizan never logs headers or bodies. A gateway call is logged as its method, path, status and time. A test runs the main flows and checks that no token, API key or secret is in the output |
 | Webhook secrets | Compared in constant time. Each gateway has its own |
 | The return address | `return_url` must start with a configured address. Checked when the payment is created |
 | The store's event URL | Comes from configuration, not from requests, so a caller cannot point Mizan at another server |
-| Limits | 100 requests a second per API key, with a burst of 200. Webhooks: 200 a second per gateway, burst 400. The return page: 20 a second per address, burst 40. Bodies: 64 KB, settlement files 50 MB. Limits are counted per instance, on real time. Over a limit: `429 too_many_requests` with `Retry-After`; a body that says it is too large: `413 body_too_large`, before it is read |
+| Limits | 100 requests a second per API key, with a burst of 200. Webhooks: 200 a second per gateway, burst 400. The return page: 20 a second per address, burst 40. Bodies: 64 KB, settlement files 50 MB. Limits are counted per instance, on real time. Over a limit: `429 too_many_requests` with `Retry-After`; a body that says it is too large: `413 body_too_large`, before it is read; a body sent in pieces (no size given) is read up to 64 KB, then refused the same way. A request without a valid key is refused before the API limit counts it, so a public deployment needs a load balancer with its own limit per address in front |
 | Input | Unknown JSON fields are refused. Text fields have a maximum length. Ids must be UUIDs |
 | Transport | TLS ends at the load balancer in front of Mizan. Mizan sends `Strict-Transport-Security` and no content that a browser renders |
 
@@ -36,7 +36,7 @@ Defaults are in `application.yml`. The environment overrides them. Secrets have 
 | `mizan.payment.late-capture` | `REFUND` | Or `KEEP` |
 | `mizan.operation.quiet-time` | 1m | See [payments](payments.md#when-the-result-is-not-known). Must be longer than `mizan.http.timeout`, or the service does not start |
 | `mizan.operation.idempotency-keys-kept` | 30d | How long an `Idempotency-Key` is remembered |
-| `mizan.http.connect-timeout`, `mizan.http.timeout` | 2s, 10s | Time limits of a gateway call |
+| `mizan.http.connect-timeout`, `mizan.http.timeout` | 2s, 10s | Time limits of a call to a gateway or to the store |
 | `mizan.settlement.missing-after` | 3d | How long a gateway may take to pay out a capture or take back a refund |
 | `mizan.fees.card.percent-bps`, `.fixed`, `.vat-bps` | 250, 100, 1500 | The card gateway's fee: 2.5% + 1 SAR, plus 15% VAT on the fee. Example values: set them from the contract |
 | `mizan.fees.pay-later.percent-bps`, `.fixed`, `.vat-bps` | 400, 0, 1500 | The pay-later provider's fee. Example values |

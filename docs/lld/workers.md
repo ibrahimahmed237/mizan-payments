@@ -70,11 +70,11 @@ A webhook may come while a look is already on its way to the gateway. That look'
 
 | Step | Rule |
 |---|---|
-| A webhook asks for a look | `syncRequested = true` and `nextSyncAt = now` (or earlier, if it was earlier) |
+| A webhook asks for a look | `syncRequested = true` and `nextSyncAt = now` |
 | Any save of the payment | While `syncRequested` is up, `nextSyncAt` stays now, whatever the look found |
-| A worker claims the payment | It takes `syncRequested` down **before** its fetch. Its look started after every request so far, so it answers them |
+| The step claims the payment | It takes `syncRequested` down **before** its fetch. Its look started after every request so far, so it answers them. This happens in one place only: the step itself, for the worker and for `/sync` |
 
-A look that is not the worker's (the return page, a command) does not take the flag down. One look too many is safe; one too few is not.
+The return page looks without the step, so it does not take the flag down. One look too many is safe; one too few is not.
 
 ### When a payment is looked at next
 

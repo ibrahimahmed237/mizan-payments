@@ -155,6 +155,7 @@ A key points to **the payment or the operation that the first request made**. A 
 
 - "The same body" is compared by a hash of the method, the path and the JSON, with object keys in order. Only the hash is stored, never the body, so a card token is not kept here either.
 - A key is a string of 1 to 128 printable characters, without spaces. Keys are kept for 30 days.
+- Keys are shared by all of the store's API keys: Mizan serves one store, so one key means one request, whoever sends it.
 - A key belongs to one request. The key of a payment cannot be used for a refund, and the other way round: `422`.
 - No answer is stored, only the id. So a crash between "made" and "answered" loses nothing: the repeat finds the payment and shows its real state.
 
@@ -239,7 +240,7 @@ Mizan-Signature: v1=5f2a...
 | No URL configured | Events are kept and marked `SKIPPED`. Nothing is sent |
 | Seen by finance | `GET /v1/events?status=&payment_id=` shows each event's status, attempts, next time and last error, but not its body. `POST /v1/events/{id}/redeliver` sends a delivered, failed or skipped event again, with the same id, from the first retry time on; a waiting one: `409 already_waiting` |
 
-The event sender takes events with a lease of one minute, longer than a call to the store can take, so an event is not sent twice at once by two instances.
+The event sender takes up to 50 events at a time with a lease of ten minutes, longer than the round can take (each call to the store is cut off after 10 seconds). So two instances do not send the same event at once. If an instance dies, its events are sent when the lease ends. Delivery is still at least once: the store must ignore an event id it has seen.
 
 The sender takes events with `FOR UPDATE SKIP LOCKED` and never holds a transaction open while it calls the store.
 

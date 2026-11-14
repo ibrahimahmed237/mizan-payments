@@ -59,7 +59,7 @@ A refused file is the gateway's mistake or a broken upload. Mizan posts nothing 
 
 ## Step 2 — match each line
 
-The matching worker takes lines in file order, with the same lease as the sync worker: a line it took is left alone for 30 seconds, and a worker that dies in the middle of a file is followed by another. Each line is matched in one transaction that locks the line, then the order and the payment.
+The matching worker takes the waiting lines in batches, earliest written first, with the same lease as the sync worker: a line it took is left alone for 30 seconds, and a worker that dies in the middle of a file is followed by another. Each line is matched in one transaction that locks the line, then the order and the payment.
 
 ```mermaid
 flowchart TB
@@ -125,14 +125,14 @@ If the line's fee differs: the line is posted with the **real** fee, and a `FEE_
 
 ## Step 3 — the daily check
 
-Once a day, and after each file:
+Once a day, at 05:30 UTC. Each payment is checked in its own short transaction, under its lock, so a line matched at the same moment is seen:
 
 | Finds | Opens |
 |---|---|
 | A payment with `capturedAmount − settledCaptured > 0`, captured more than N days ago (default 3) | `MISSING_FROM_SETTLEMENT`, with the amount |
 | The same for refunds | `MISSING_FROM_SETTLEMENT` |
 
-One open discrepancy of this type per payment, with the missing amount as `expected`. It closes by itself (`SETTLED_LATER`) when a later line settles the rest, or at the next check that finds nothing missing.
+One open discrepancy of this type per payment, with the missing amount as `expected` when it was opened. It closes by itself (`SETTLED_LATER`) when a later line settles the rest: only a matched line lowers what is missing, and matching closes it under the payment's lock.
 
 ## Discrepancies
 
@@ -178,7 +178,7 @@ The simulator can break its own settlement file. The proof run plants these and 
 
 | Test | Proves |
 |---|---|
-| Parser tests | Each refusal of step 1; a large file is read as a stream |
+| Parser tests | Each refusal of step 1; a file over the line limit is refused before it is all read; a file of 200,000 lines is taken in one call |
 | Matching tests (pure, in `mizan-core`) | Each branch of the flow, each discrepancy type |
 | Property test: any payments and any file made from them, lines in any order | After matching: `bank` = the sum of `net`; I1 to I4 of the [ledger](ledger.md#what-must-always-be-true) hold |
 | Import and matching tests with the database (`ReconciliationIT`, `MatchingIT`) | The same file twice; another file with the same payout; a crash in the middle of matching continues; two workers settle each line once |
