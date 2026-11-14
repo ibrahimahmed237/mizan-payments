@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.mizan.app.application.port.Transactions;
+import dev.mizan.app.application.port.Payments;
 import dev.mizan.app.support.IntegrationTest;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
@@ -243,6 +244,27 @@ class SchemaIT extends IntegrationTest {
 
     refused("discrepancies_open_per_line", () -> lineDiscrepancy(one, payment));
     lineDiscrepancy(two, payment); // the same type for the same payment, on another line
+  }
+
+  @Test
+  void unsettled_payments_are_found_through_their_own_index_not_by_reading_every_payment() {
+    Payments payments = world.app.getBean(Payments.class);
+    long before = scansOfTheUnsettledIndex();
+
+    transactions.run(() -> {
+      // The table is small here, so the planner would read it whole. With that way closed, it must be able to use
+      // the index for both questions, as it will on a table of millions.
+      jdbc.sql("SET LOCAL enable_seqscan = off").update();
+      jdbc.sql("SELECT pg_stat_force_next_flush()").query().singleRow();
+      payments.unsettledSince(now());
+      payments.unsettledByAge(now());
+    });
+
+    assertThat(scansOfTheUnsettledIndex() - before).isEqualTo(2);
+  }
+
+  private long scansOfTheUnsettledIndex() {
+    return jdbc.sql("SELECT idx_scan FROM pg_stat_user_indexes WHERE indexrelname = 'payments_unsettled'").query(Long.class).single();
   }
 
   // ---------------------------------------------------------------- helpers

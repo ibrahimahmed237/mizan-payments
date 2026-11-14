@@ -7,13 +7,11 @@ import dev.mizan.app.application.port.Settlements;
 import dev.mizan.app.application.view.DiscrepancyView;
 import dev.mizan.app.application.view.SettlementFileView;
 import dev.mizan.core.ledger.Account;
-import java.time.Duration;
 import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -27,14 +25,11 @@ public class BackofficeQueries {
   /** All accounts, and whether total debits equal total credits (invariant I1). */
   public record Balances(List<Balance> accounts, long totalDebits, long totalCredits, boolean balanced) {}
 
-  /** Open discrepancies of one type. */
-  public record OpenOfType(String type, long count, long suspenseAmount) {}
-
   /**
    * @param unsettled captured money that no file has paid out yet, net of refunds not taken back, by age of the capture
    * @param suspense the suspense account's balance: money received and not explained yet (a credit is positive here)
    */
-  public record Reconciliation(Map<String, Long> unsettled, long suspense, List<OpenOfType> openDiscrepancies) {}
+  public record Reconciliation(Map<String, Long> unsettled, long suspense, List<Discrepancies.OpenOfType> openDiscrepancies) {}
 
   public static final int MAX_PAGE = 100;
 
@@ -97,28 +92,12 @@ public class BackofficeQueries {
   }
 
   public Reconciliation reconciliation() {
-    var now = clock.instant();
+    Payments.Unsettled byAge = payments.unsettledByAge(clock.instant());
     Map<String, Long> unsettled = new LinkedHashMap<>();
-    unsettled.put("up_to_3_days", 0L);
-    unsettled.put("3_to_7_days", 0L);
-    unsettled.put("over_7_days", 0L);
-    for (var payment : payments.unsettledSince(now)) {
-      var view = payment.forSettlement();
-      long amount = view.unsettledCaptured() - view.unsettledRefunded();
-      var since = payment.payment().capturedAt();
-      Duration age = since == null ? Duration.ZERO : Duration.between(since, now);
-      String bucket = age.compareTo(Duration.ofDays(3)) < 0 ? "up_to_3_days" : age.compareTo(Duration.ofDays(7)) < 0 ? "3_to_7_days" : "over_7_days";
-      unsettled.merge(bucket, amount, Long::sum);
-    }
+    unsettled.put("up_to_3_days", byAge.upTo3Days());
+    unsettled.put("3_to_7_days", byAge.from3To7Days());
+    unsettled.put("over_7_days", byAge.over7Days());
     long suspense = -balances().accounts().stream().filter(b -> b.account().equals(Account.SUSPENSE.code())).findFirst().orElseThrow().balance();
-    Map<String, long[]> byType = new TreeMap<>();
-    for (var open : discrepancies.list(true, null, Integer.MAX_VALUE)) {
-      long[] row = byType.computeIfAbsent(open.type(), t -> new long[2]);
-      row[0]++;
-      row[1] += open.suspenseAmount();
-    }
-    List<OpenOfType> openDiscrepancies = byType.entrySet().stream()
-        .map(e -> new OpenOfType(e.getKey(), e.getValue()[0], e.getValue()[1])).toList();
-    return new Reconciliation(unsettled, suspense, openDiscrepancies);
+    return new Reconciliation(unsettled, suspense, discrepancies.openByType());
   }
 }

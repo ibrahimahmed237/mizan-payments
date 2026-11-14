@@ -39,6 +39,12 @@ public interface Discrepancies {
    */
   Optional<DiscrepancyRecord> lockOpenOf(UUID paymentId, String type);
 
+  /** The open discrepancies of one type: how many, and how much money they hold in suspense. */
+  record OpenOfType(String type, long count, long suspenseAmount) {}
+
+  /** Counted by the database, by type, in the order of the type's name. */
+  List<OpenOfType> openByType();
+
   /** Newest first. Each filter may be null. */
   List<DiscrepancyRecord> list(Boolean open, String type, int limit);
 

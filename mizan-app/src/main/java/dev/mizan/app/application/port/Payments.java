@@ -57,6 +57,12 @@ public interface Payments {
    */
   List<PaymentRecord> unsettledSince(Instant before);
 
+  /** Captured money that no file has paid out yet, less refunds that no file has taken back, by the capture's age. */
+  record Unsettled(long upTo3Days, long from3To7Days, long over7Days) {}
+
+  /** Added up by the database: there can be very many such payments. */
+  Unsettled unsettledByAge(Instant now);
+
   /** Newest first. {@code before} is the place of the last payment of the page before; null for the first page. */
   List<PaymentRecord> list(String reference, PaymentStatus status, Place before, int limit);
 

@@ -632,6 +632,58 @@ class ReconciliationIT extends IntegrationTest {
   }
 
   @Test
+  void the_report_shows_unsettled_money_by_the_age_of_its_capture() {
+    advance(Duration.ofDays(8)); // every earlier test's unsettled money is now older than 7 days
+    String id = captured(newOrder(), 15_000);
+    api.post("/v1/payments/" + id + "/refunds", Map.of("amount", 4_000));
+
+    JsonNode fresh = finance.get("/v1/reports/reconciliation").json().path("unsettled");
+    advance(Duration.ofDays(3));
+    JsonNode aging = finance.get("/v1/reports/reconciliation").json().path("unsettled");
+    advance(Duration.ofDays(4));
+    JsonNode old = finance.get("/v1/reports/reconciliation").json().path("unsettled");
+
+    // Captured 150.00, refunded 40.00, nothing settled: the gateway still owes the store 110.00.
+    assertThat(fresh.path("up_to_3_days").asLong()).isEqualTo(11_000);
+    assertThat(fresh.path("3_to_7_days").asLong()).isZero();
+    assertThat(aging.path("up_to_3_days").asLong()).isZero();
+    assertThat(aging.path("3_to_7_days").asLong()).isEqualTo(11_000);
+    assertThat(old.path("3_to_7_days").asLong()).isZero();
+    assertThat(old.path("over_7_days").asLong() - aging.path("over_7_days").asLong()).isEqualTo(11_000);
+  }
+
+  @Test
+  void the_report_counts_open_discrepancies_by_type_with_the_money_they_hold() {
+    JsonNode before = finance.get("/v1/reports/reconciliation").json().path("open_discrepancies");
+    captured(newOrder(), 15_000);
+    world.simulator.planFile(FileFault.EXTRA_LINE, null); // 50.00 for a payment that does not exist
+    String file = upload(payout(Gateway.CARD_GATEWAY)).text("id");
+    match();
+
+    JsonNode after = finance.get("/v1/reports/reconciliation").json().path("open_discrepancies");
+    String discrepancy = jdbc.sql("SELECT d.id::text FROM discrepancies d JOIN settlement_lines l ON l.id = d.line_id WHERE l.file_id = ?")
+        .param(UUID.fromString(file)).query(String.class).single();
+    finance.post("/v1/discrepancies/" + discrepancy + "/accept", Map.of("note", "A test payment made at the gateway by hand."));
+    JsonNode closed = finance.get("/v1/reports/reconciliation").json().path("open_discrepancies");
+
+    assertThat(ofType(after, "UNKNOWN_PAYMENT").path("count").asLong() - ofType(before, "UNKNOWN_PAYMENT").path("count").asLong()).isEqualTo(1);
+    assertThat(ofType(after, "UNKNOWN_PAYMENT").path("suspense_amount").asLong() - ofType(before, "UNKNOWN_PAYMENT").path("suspense_amount").asLong())
+        .isEqualTo(5_000 - cardFee(5_000));
+    // Only open ones are counted: once finance has accepted it, it is gone from the report.
+    assertThat(ofType(closed, "UNKNOWN_PAYMENT").path("count").asLong()).isEqualTo(ofType(before, "UNKNOWN_PAYMENT").path("count").asLong());
+  }
+
+  /** The report's row for one type of discrepancy; an empty object when there is none. */
+  private static JsonNode ofType(JsonNode openDiscrepancies, String type) {
+    for (JsonNode row : openDiscrepancies) {
+      if (row.path("type").asString().equals(type)) {
+        return row;
+      }
+    }
+    return dev.mizan.app.support.Api.JSON.createObjectNode();
+  }
+
+  @Test
   void discrepancies_are_listed_by_status_and_type() {
     String order = newOrder();
     String id = captured(order, 15_000);

@@ -84,6 +84,12 @@ class JdbcDiscrepancies implements Discrepancies {
   }
 
   @Override
+  public List<OpenOfType> openByType() {
+    return jdbc.sql("SELECT type, count(*) AS count, coalesce(sum(suspense_amount), 0) AS held FROM discrepancies WHERE status = 'OPEN' GROUP BY type ORDER BY type")
+        .query((row, n) -> new OpenOfType(row.getString("type"), row.getLong("count"), row.getLong("held"))).list();
+  }
+
+  @Override
   public List<DiscrepancyRecord> list(Boolean open, String type, int limit) {
     var where = new ArrayList<String>();
     var values = new ArrayList<Object>();

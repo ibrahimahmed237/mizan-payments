@@ -11,6 +11,7 @@ import dev.mizan.core.payment.Payment;
 import dev.mizan.core.payment.PaymentStatus;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -185,6 +186,26 @@ class JdbcPayments implements Payments {
         ORDER BY captured_at, id
         """)
         .param(Sql.time(before)).param(Sql.time(before)).query(JdbcPayments::read).list();
+  }
+
+  @Override
+  public Unsettled unsettledByAge(Instant now) {
+    return jdbc.sql("""
+        SELECT
+          coalesce(sum(amount) FILTER (WHERE since > :threeDaysAgo), 0) AS up_to_3,
+          coalesce(sum(amount) FILTER (WHERE since <= :threeDaysAgo AND since > :sevenDaysAgo), 0) AS from_3_to_7,
+          coalesce(sum(amount) FILTER (WHERE since <= :sevenDaysAgo), 0) AS over_7
+        FROM (
+          SELECT (captured_amount - settled_captured) - (refunded_amount - settled_refunded) AS amount,
+                 coalesce(captured_at, :now) AS since
+          FROM payments
+          WHERE captured_amount > settled_captured OR refunded_amount > settled_refunded) AS unsettled
+        """)
+        .param("now", Sql.time(now))
+        .param("threeDaysAgo", Sql.time(now.minus(Duration.ofDays(3))))
+        .param("sevenDaysAgo", Sql.time(now.minus(Duration.ofDays(7))))
+        .query((row, n) -> new Unsettled(row.getLong("up_to_3"), row.getLong("from_3_to_7"), row.getLong("over_7")))
+        .single();
   }
 
   @Override
