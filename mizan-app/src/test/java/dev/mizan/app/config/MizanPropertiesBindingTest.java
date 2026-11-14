@@ -36,6 +36,15 @@ class MizanPropertiesBindingTest {
     assertThat(properties.settlement().missingAfter()).hasDays(3);
     assertThat(properties.fees().card()).isEqualTo(new MizanProperties.FeeProperties(250, 100, 1500));
     assertThat(properties.fees().payLater()).isEqualTo(new MizanProperties.FeeProperties(400, 0, 1500));
+    assertThat(properties.workers()).isEqualTo(new MizanProperties.WorkersProperties(16, 8));
+  }
+
+  @Test
+  void the_workers_other_settings_do_not_get_in_the_way_of_how_many_run_side_by_side() {
+    MizanProperties properties = bind(Map.of(
+        "mizan.workers.enabled", "false", "mizan.workers.sync-every", "5s", "mizan.workers.sync-parallel", "32"));
+
+    assertThat(properties.workers()).isEqualTo(new MizanProperties.WorkersProperties(32, 8));
   }
 
   @Test

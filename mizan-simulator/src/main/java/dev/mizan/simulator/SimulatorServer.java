@@ -16,6 +16,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -60,6 +61,11 @@ public final class SimulatorServer implements AutoCloseable {
   private final ScheduledExecutorService ticker =
       Executors.newSingleThreadScheduledExecutor(runnable -> daemon(runnable, "simulator-clock"));
 
+  /** How long every call takes, in real time. Zero unless a test makes the gateways slow. */
+  private volatile Duration latency = Duration.ZERO;
+  private final AtomicInteger inFlight = new AtomicInteger();
+  private final AtomicInteger busiest = new AtomicInteger();
+
   private SimulatorServer(Simulator simulator, HttpServer server) {
     this.simulator = simulator;
     this.server = server;
@@ -89,6 +95,16 @@ public final class SimulatorServer implements AutoCloseable {
     return simulator.baseUrl();
   }
 
+  /** Makes every call take this long, in real time: a gateway that is slow but works. */
+  public void latency(Duration each) {
+    latency = each;
+  }
+
+  /** The most calls that were being answered at the same moment since the last call of this method. */
+  public int busiestSinceLastAsked() {
+    return busiest.getAndSet(0);
+  }
+
   @Override
   public void close() {
     ticker.shutdownNow();
@@ -113,8 +129,18 @@ public final class SimulatorServer implements AutoCloseable {
   // ---------------------------------------------------------------- routing
 
   private void handle(HttpExchange exchange) throws IOException {
+    busiest.accumulateAndGet(inFlight.incrementAndGet(), Math::max);
+    try {
+      answer(exchange);
+    } finally {
+      inFlight.decrementAndGet();
+    }
+  }
+
+  private void answer(HttpExchange exchange) throws IOException {
     Reply reply;
     try {
+      pause(latency);
       reply = route(exchange);
     } catch (SimError e) {
       ObjectNode body = Wire.JSON.createObjectNode();
@@ -394,8 +420,15 @@ public final class SimulatorServer implements AutoCloseable {
   }
 
   private void hang() {
+    pause(simulator.config().hang());
+  }
+
+  private static void pause(Duration time) {
+    if (time.isZero()) {
+      return;
+    }
     try {
-      Thread.sleep(simulator.config().hang().toMillis());
+      Thread.sleep(time.toMillis());
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }

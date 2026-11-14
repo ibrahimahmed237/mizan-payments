@@ -27,12 +27,13 @@ class MizanPropertiesTest {
   private static final HttpProperties HTTP = new HttpProperties(Duration.ofSeconds(2), Duration.ofSeconds(10));
   private static final SettlementProperties SETTLEMENT = new SettlementProperties(Duration.ofDays(3));
   private static final LimitsProperties LIMITS = new LimitsProperties(100, 200, 200, 400, 20, 40);
+  private static final MizanProperties.WorkersProperties WORKERS = new MizanProperties.WorkersProperties(16, 8);
   private static final StoreProperties STORE = new StoreProperties(null, null);
   private static final FeesProperties FEES = new FeesProperties(new FeeProperties(250, 100, 1500), new FeeProperties(400, 0, 1500));
 
   @Test
   void complete_settings_are_accepted() {
-    var properties = new MizanProperties("https://mizan.example", List.of("https://store.example/"), PAYMENT, OPERATION, GATEWAY, GATEWAY, HTTP, SETTLEMENT, FEES, STORE, LIMITS);
+    var properties = new MizanProperties("https://mizan.example", List.of("https://store.example/"), PAYMENT, OPERATION, GATEWAY, GATEWAY, HTTP, SETTLEMENT, FEES, STORE, LIMITS, WORKERS);
 
     assertThat(properties.publicUrl()).isEqualTo("https://mizan.example");
   }
@@ -41,7 +42,7 @@ class MizanPropertiesTest {
   void every_missing_setting_is_named_at_once() {
     var nothing = new GatewayProperties(null, " ", null);
 
-    assertThatThrownBy(() -> new MizanProperties(null, List.of(), PAYMENT, OPERATION, nothing, nothing, HTTP, SETTLEMENT, FEES, STORE, LIMITS))
+    assertThatThrownBy(() -> new MizanProperties(null, List.of(), PAYMENT, OPERATION, nothing, nothing, HTTP, SETTLEMENT, FEES, STORE, LIMITS, WORKERS))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("MIZAN_PUBLIC_URL")
         .hasMessageContaining("MIZAN_RETURN_URL_PREFIXES")
@@ -57,7 +58,7 @@ class MizanPropertiesTest {
   void one_missing_setting_is_named_alone() {
     var noSecret = new GatewayProperties("https://gateway.example", "key", "");
 
-    assertThatThrownBy(() -> new MizanProperties("https://mizan.example", List.of("https://store.example/"), PAYMENT, OPERATION, GATEWAY, noSecret, HTTP, SETTLEMENT, FEES, STORE, LIMITS))
+    assertThatThrownBy(() -> new MizanProperties("https://mizan.example", List.of("https://store.example/"), PAYMENT, OPERATION, GATEWAY, noSecret, HTTP, SETTLEMENT, FEES, STORE, LIMITS, WORKERS))
         .hasMessageEndingWith("missing: MIZAN_PAY_LATER_WEBHOOK_SECRET");
   }
 
@@ -65,7 +66,7 @@ class MizanPropertiesTest {
   void a_store_address_needs_a_secret_to_sign_events_with() {
     var address = new StoreProperties("https://store.example/mizan-events", " ");
 
-    assertThatThrownBy(() -> new MizanProperties("https://mizan.example", List.of("https://store.example/"), PAYMENT, OPERATION, GATEWAY, GATEWAY, HTTP, SETTLEMENT, FEES, address, LIMITS))
+    assertThatThrownBy(() -> new MizanProperties("https://mizan.example", List.of("https://store.example/"), PAYMENT, OPERATION, GATEWAY, GATEWAY, HTTP, SETTLEMENT, FEES, address, LIMITS, WORKERS))
         .hasMessageEndingWith("missing: MIZAN_STORE_EVENT_SECRET");
   }
 
@@ -73,7 +74,7 @@ class MizanPropertiesTest {
   void the_quiet_time_must_be_longer_than_a_gateway_call_can_take() {
     var tooShort = new OperationProperties(Duration.ofSeconds(10), Duration.ofDays(30));
 
-    assertThatThrownBy(() -> new MizanProperties("https://mizan.example", List.of("https://store.example/"), PAYMENT, tooShort, GATEWAY, GATEWAY, HTTP, SETTLEMENT, FEES, STORE, LIMITS))
+    assertThatThrownBy(() -> new MizanProperties("https://mizan.example", List.of("https://store.example/"), PAYMENT, tooShort, GATEWAY, GATEWAY, HTTP, SETTLEMENT, FEES, STORE, LIMITS, WORKERS))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("quiet-time");
   }

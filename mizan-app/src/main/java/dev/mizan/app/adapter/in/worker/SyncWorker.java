@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 class SyncWorker {
 
   /** Payments taken in one round. A full round is followed by another at once. */
-  static final int BATCH = 20;
+  static final int BATCH = 50;
 
   private static final Logger LOG = LoggerFactory.getLogger(SyncWorker.class);
 

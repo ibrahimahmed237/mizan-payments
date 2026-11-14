@@ -25,7 +25,8 @@ public record MizanProperties(
     @DefaultValue SettlementProperties settlement,
     @DefaultValue FeesProperties fees,
     @DefaultValue StoreProperties store,
-    @DefaultValue LimitsProperties limits) {
+    @DefaultValue LimitsProperties limits,
+    @DefaultValue WorkersProperties workers) {
 
   /**
    * @param maxAmount the largest payment, in halalas
@@ -90,6 +91,15 @@ public record MizanProperties(
       @DefaultValue("400") int webhooksBurst,
       @DefaultValue("20") double returnsPerSecond,
       @DefaultValue("40") int returnsBurst) {}
+
+  /**
+   * How many pieces of a round run side by side. The other settings under {@code mizan.workers} (on or off, and
+   * the pauses) are read where the workers are declared.
+   *
+   * @param syncParallel payments the sync worker looks at side by side
+   * @param sendParallel events the event sender sends side by side
+   */
+  public record WorkersProperties(@DefaultValue("16") int syncParallel, @DefaultValue("8") int sendParallel) {}
 
   /** Stops the start when a needed setting is missing, and says which. */
   public MizanProperties {

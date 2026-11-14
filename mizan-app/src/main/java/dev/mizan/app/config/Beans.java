@@ -6,6 +6,7 @@ import dev.mizan.app.adapter.in.web.WebhookReader;
 import dev.mizan.app.adapter.out.gateway.HttpGateways;
 import dev.mizan.app.adapter.out.store.HttpStoreEndpoint;
 import dev.mizan.app.application.Settings;
+import dev.mizan.app.application.Workers;
 import dev.mizan.app.application.port.Gateways;
 import dev.mizan.app.application.port.StoreEndpoint;
 import dev.mizan.core.fees.FeeRule;
@@ -51,6 +52,11 @@ class Beans {
             Gateway.CARD_GATEWAY, feeRule(properties.fees().card()),
             Gateway.PAY_LATER, feeRule(properties.fees().payLater())),
         properties.settlement().missingAfter());
+  }
+
+  @Bean
+  Workers workers(MizanProperties properties) {
+    return new Workers(properties.workers().syncParallel(), properties.workers().sendParallel());
   }
 
   @Bean

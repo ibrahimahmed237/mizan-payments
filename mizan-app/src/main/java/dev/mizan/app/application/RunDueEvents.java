@@ -7,6 +7,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.InstantSource;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -18,7 +20,7 @@ import org.springframework.stereotype.Service;
  * result of each is written down on its own.
  */
 @Service
-public class RunDueEvents {
+public class RunDueEvents implements AutoCloseable {
 
   /** The waits before each new try, after a failed one. */
   public static final List<Duration> RETRIES = List.of(
@@ -30,13 +32,17 @@ public class RunDueEvents {
    */
   public static final Duration LEASE = Duration.ofMinutes(10);
 
+  private static final Logger LOG = LoggerFactory.getLogger(RunDueEvents.class);
+
   private final Outbox outbox;
   private final StoreEndpoint store;
+  private final SideBySide sends;
   private final InstantSource clock;
 
-  public RunDueEvents(Outbox outbox, StoreEndpoint store, InstantSource clock) {
+  public RunDueEvents(Outbox outbox, StoreEndpoint store, Workers workers, InstantSource clock) {
     this.outbox = outbox;
     this.store = store;
+    this.sends = new SideBySide("send", workers.sendParallel());
     this.clock = clock;
   }
 
@@ -44,10 +50,17 @@ public class RunDueEvents {
   public int handle(int limit) {
     Instant now = clock.instant();
     List<OutboxEvent> due = outbox.claimDue(now, now.plus(LEASE), limit);
-    for (OutboxEvent event : due) {
+    // Side by side: a send is mostly waiting for the store. The store is not promised any order (it has each
+    // payment's version), so nothing is lost by it.
+    sends.forEach(due, this::send);
+    return due.size();
+  }
+
+  private void send(OutboxEvent event) {
+    try {
       if (!store.configured()) {
         outbox.skipped(event.id());
-        continue;
+        return;
       }
       Instant sentAt = clock.instant();
       StoreEndpoint.Delivery delivery = store.send(event.id(), sentAt.getEpochSecond(), event.payload());
@@ -59,7 +72,14 @@ public class RunDueEvents {
       } else {
         outbox.failed(event.id(), attempts, delivery.error());
       }
+    } catch (RuntimeException e) {
+      // One event's trouble must not stop the others. Its lease ends, and it is taken again.
+      LOG.error("The event sender failed on event {}", event.id(), e);
     }
-    return due.size();
+  }
+
+  @Override
+  public void close() {
+    sends.close();
   }
 }

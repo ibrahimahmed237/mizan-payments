@@ -12,6 +12,7 @@ import dev.mizan.app.support.StoreReceiver.Received;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -137,6 +138,26 @@ class EventSenderIT extends IntegrationTest {
     advance(Duration.ofMinutes(1));
     send();
     assertThat(status(event)).isEqualTo("DELIVERED 2"); // the store must ignore the first copy if it got it after all
+  }
+
+  @Test
+  void events_are_sent_side_by_side_so_a_slow_store_does_not_hold_up_the_rest() {
+    List<String> events = new ArrayList<>();
+    for (int i = 0; i < 6; i++) {
+      events.add(onlyEvent(captured(newOrder(), 15_000)));
+    }
+    world.store.delayMillis.set(200); // a store that works, slowly
+    world.store.busiestSinceLastAsked();
+
+    try (ConfigurableApplicationContext sixAtATime = world.startWith("mizan.workers.send-parallel=6")) {
+      sixAtATime.getBean(RunDueEvents.class).handle(1_000);
+    }
+
+    assertThat(world.store.busiestSinceLastAsked()).isGreaterThan(1);
+    for (String event : events) {
+      assertThat(status(event)).isEqualTo("DELIVERED 1");
+      assertThat(world.store.of(event)).hasSize(1); // each one once
+    }
   }
 
   @Test

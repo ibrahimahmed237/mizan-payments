@@ -133,6 +133,10 @@ public final class World {
         Map.entry("mizan.store.event-url", store.url()),
         Map.entry("mizan.store.event-secret", StoreReceiver.SECRET),
         Map.entry("mizan.workers.enabled", "false"),
+        // One at a time, so that a round's order is the same in every run. -Dmizan.test.parallel=8 runs every test
+        // with rounds side by side; WorkerIT and EventSenderIT always have a test that does.
+        Map.entry("mizan.workers.sync-parallel", System.getProperty("mizan.test.parallel", "1")),
+        Map.entry("mizan.workers.send-parallel", System.getProperty("mizan.test.parallel", "1")),
         // The tests send hundreds of requests a second with one key. The limits have their own test, with low ones.
         Map.entry("mizan.limits.api-per-second", "100000"),
         Map.entry("mizan.limits.api-burst", "100000"),

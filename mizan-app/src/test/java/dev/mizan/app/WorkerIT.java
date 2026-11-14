@@ -3,11 +3,13 @@ package dev.mizan.app;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.mizan.app.application.AdvancePayment;
+import dev.mizan.app.application.RunDuePayments;
 import dev.mizan.app.application.port.Payments;
 import dev.mizan.app.application.port.Transactions;
 import dev.mizan.app.support.IntegrationTest;
 import dev.mizan.simulator.Fault;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -16,6 +18,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ConfigurableApplicationContext;
 
 /** The sync worker's rounds: which payments it takes, the lease, and the schedule. See docs/lld/workers.md. */
 class WorkerIT extends IntegrationTest {
@@ -158,6 +161,33 @@ class WorkerIT extends IntegrationTest {
     assertThat(payment(id).text("status")).isEqualTo("CAPTURED");
     assertThat(entries(id)).containsExactly("CAPTURE 15000");
     assertThat(events(id)).containsExactly("payment.captured");
+  }
+
+  @Test
+  void a_round_looks_at_its_payments_side_by_side_so_a_slow_gateway_holds_up_nobody() {
+    List<String> ids = new ArrayList<>();
+    for (int i = 0; i < 8; i++) {
+      String id = pay(newOrder(), 15_000, "3333", "AUTO").text("id");
+      world.simulator.customerApproves(id);
+      ids.add(id);
+    }
+    advance(Duration.ofSeconds(15));
+    world.simulatorServer.latency(Duration.ofMillis(200)); // a gateway that works, slowly
+    world.simulatorServer.busiestSinceLastAsked();
+
+    try (ConfigurableApplicationContext eightAtATime = world.startWith("mizan.workers.sync-parallel=8")) {
+      eightAtATime.getBean(RunDuePayments.class).handle(50);
+    } finally {
+      world.simulatorServer.latency(Duration.ZERO);
+    }
+
+    // Each look waits 200 ms for the gateway; no transaction is open meanwhile (rule R5), so the looks overlap.
+    assertThat(world.simulatorServer.busiestSinceLastAsked()).isGreaterThan(1);
+    for (String id : ids) {
+      assertThat(payment(id).text("status")).as(id).isEqualTo("CAPTURED");
+      assertThat(entries(id)).containsExactly("CAPTURE 15000");
+      assertThat(events(id)).containsExactly("payment.captured");
+    }
   }
 
   @Test

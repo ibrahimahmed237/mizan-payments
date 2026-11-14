@@ -6,6 +6,7 @@ import dev.mizan.app.support.IntegrationTest;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 /**
  * The worker's own timer. Every other test switches the workers off and runs rounds by hand; this one lets the
@@ -21,6 +22,8 @@ class SyncWorkerIT extends IntegrationTest {
 
     try (ConfigurableApplicationContext withWorkers = world.startWith("mizan.workers.enabled=true", "mizan.workers.sync-every=50ms")) {
       assertThat(withWorkers.getBeansOfType(SyncWorker.class)).hasSize(1);
+      // Each of the five workers has a thread of its own: one that waits for a slow gateway holds up no other.
+      assertThat(withWorkers.getBean(ThreadPoolTaskScheduler.class).getScheduledThreadPoolExecutor().getCorePoolSize()).isEqualTo(5);
 
       await(() -> "CAPTURED".equals(payment(id).text("status")));
     }

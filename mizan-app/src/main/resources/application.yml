@@ -11,6 +11,12 @@ spring:
       data-source-properties:
         # A batch of inserts (the lines of a settlement file) is sent as a few statements, not one per row.
         reWriteBatchedInserts: true
+  task:
+    scheduling:
+      pool:
+        # One thread for each of the five workers. With the default of one, a worker that waits for a slow gateway
+        # would hold up the others.
+        size: 5
   jackson:
     property-naming-strategy: SNAKE_CASE
     deserialization:
